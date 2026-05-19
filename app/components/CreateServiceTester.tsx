@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 
-const STORAGE_KEY = "kobil-create-service-v1";
+const STORAGE_KEY = "kobil-create-service-v2";
 const CREDS_KEY = "kobil-service-credentials-v1";
 
 type Stored = {
@@ -16,6 +16,7 @@ type Stored = {
 
 type CreateResp = {
   ok?: boolean;
+  stage?: string;
   status?: number;
   requestUrl?: string;
   payload?: unknown;
@@ -25,22 +26,20 @@ type CreateResp = {
   error?: string;
 };
 
+type StepResult = { ok: boolean; status: number; error?: string };
 type PublishResp = {
   ok?: boolean;
   branchId?: string;
-  touch?: { ok: boolean; status: number; error?: string };
-  save?: { ok: boolean; status: number; error?: string };
-  publish?: { ok: boolean; status: number; error?: string };
-  switch?: { ok: boolean; status: number; error?: string };
+  touch?: StepResult;
+  save?: StepResult;
+  publish?: StepResult;
+  switch?: StepResult;
   error?: string;
 };
 
 export default function CreateServiceTester() {
   const [smartdashboardBaseUrl, setBase] = useState("");
   const [tenant, setTenant] = useState("");
-  const [cookie, setCookie] = useState("");
-  const [showCookie, setShowCookie] = useState(false);
-
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [callbackUrl, setCallbackUrl] = useState("");
@@ -67,7 +66,7 @@ export default function CreateServiceTester() {
     }
   }, []);
 
-  function persist(next?: Partial<Stored>) {
+  function persist() {
     try {
       const merged: Stored = {
         smartdashboardBaseUrl,
@@ -75,7 +74,6 @@ export default function CreateServiceTester() {
         name,
         description,
         callbackUrl,
-        ...next,
       };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
     } catch {
@@ -114,7 +112,6 @@ export default function CreateServiceTester() {
         body: JSON.stringify({
           smartdashboardBaseUrl,
           tenant,
-          cookie,
           service: { name, description, callbackUrl },
         }),
       });
@@ -124,7 +121,11 @@ export default function CreateServiceTester() {
         saveCreds(data.clientId, data.clientSecret);
       }
     } catch (err) {
-      setCreateResp({ ok: false, status: 0, error: err instanceof Error ? err.message : "Request failed" });
+      setCreateResp({
+        ok: false,
+        status: 0,
+        error: err instanceof Error ? err.message : "Request failed",
+      });
     } finally {
       setCreating(false);
     }
@@ -137,12 +138,15 @@ export default function CreateServiceTester() {
       const res = await fetch("/api/smartdashboard/publish", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ smartdashboardBaseUrl, tenant, cookie }),
+        body: JSON.stringify({ smartdashboardBaseUrl, tenant }),
       });
       const data = (await res.json()) as PublishResp;
       setPublishResp(data);
     } catch (err) {
-      setPublishResp({ ok: false, error: err instanceof Error ? err.message : "Request failed" });
+      setPublishResp({
+        ok: false,
+        error: err instanceof Error ? err.message : "Request failed",
+      });
     } finally {
       setPublishing(false);
     }
@@ -150,19 +154,21 @@ export default function CreateServiceTester() {
 
   const created = createResp?.ok && createResp.clientId && createResp.clientSecret;
 
+  function copy(text: string) {
+    try {
+      navigator.clipboard.writeText(text);
+    } catch {
+      /* ignore */
+    }
+  }
+
   return (
     <div className="space-y-6">
-      <details className="rounded-lg border border-zinc-200 bg-zinc-50 p-4 text-sm">
-        <summary className="cursor-pointer font-medium text-zinc-800">
-          How do I get a SmartDashboard cookie?
-        </summary>
-        <ol className="mt-3 list-decimal space-y-1 pl-5 text-zinc-700">
-          <li>Log in to SmartDashboard in your browser (the same tenant you&rsquo;ll target below).</li>
-          <li>Open DevTools → Network, click any XHR request to your tenant.</li>
-          <li>In <em>Request Headers</em>, copy the entire <code>Cookie</code> header value.</li>
-          <li>Paste it in the Cookie field. It stays in your browser&rsquo;s memory and is only sent through this site&rsquo;s proxy on submit.</li>
-        </ol>
-      </details>
+      <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-4 text-sm text-zinc-700">
+        Click <strong>Create service</strong> and the server logs in to SmartDashboard,
+        creates the service, and returns your <code>client_id</code> + <code>client_secret</code>.
+        No cookie wrangling needed.
+      </div>
 
       <form
         onSubmit={createService}
@@ -196,29 +202,6 @@ export default function CreateServiceTester() {
           </div>
         </div>
 
-        <div className="mt-4">
-          <label className="block text-sm font-medium text-zinc-800">Cookie header</label>
-          <div className="mt-1 flex">
-            <textarea
-              required
-              rows={2}
-              value={showCookie ? cookie : cookie ? "•".repeat(Math.min(cookie.length, 80)) : ""}
-              onChange={(e) => setCookie(e.target.value)}
-              onFocus={() => setShowCookie(true)}
-              onBlur={() => setShowCookie(false)}
-              placeholder="KEYCLOAK_SESSION=...; AUTH_SESSION_ID=...; KC_RESTART=..."
-              className="w-full rounded-l-md border border-zinc-300 px-3 py-2 font-mono text-xs focus:border-zinc-900 focus:outline-none"
-            />
-            <button
-              type="button"
-              onClick={() => setShowCookie((s) => !s)}
-              className="rounded-r-md border border-l-0 border-zinc-300 bg-zinc-50 px-3 text-xs text-zinc-600 hover:bg-zinc-100"
-            >
-              {showCookie ? "Hide" : "Show"}
-            </button>
-          </div>
-        </div>
-
         <h3 className="mt-8 mb-4 text-sm font-semibold uppercase tracking-wider text-zinc-500">
           Service definition
         </h3>
@@ -246,11 +229,13 @@ export default function CreateServiceTester() {
             </div>
           </div>
           <div>
-            <label className="block text-sm font-medium text-zinc-800">Description</label>
+            <label className="block text-sm font-medium text-zinc-800">
+              Description <span className="text-zinc-400">(optional)</span>
+            </label>
             <input
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="Optional short description"
+              placeholder="Short description"
               className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-900 focus:outline-none"
             />
           </div>
@@ -262,10 +247,10 @@ export default function CreateServiceTester() {
             disabled={creating}
             className="rounded-full bg-[var(--accent)] px-5 py-2 text-sm font-medium text-white hover:bg-[var(--accent-hover)] disabled:opacity-60"
           >
-            {creating ? "Creating…" : "Create service"}
+            {creating ? "Logging in & creating…" : "Create service"}
           </button>
           <span className="text-xs text-zinc-500">
-            POST <code>/api/v1/smart-screen/cqrs/services/</code>
+            Login → POST <code>/api/v1/smart-screen/cqrs/services/</code>
           </span>
         </div>
       </form>
@@ -281,29 +266,55 @@ export default function CreateServiceTester() {
                   : "bg-red-100 text-red-800"
               }`}
             >
-              {createResp.ok ? "Service created" : `HTTP ${createResp.status ?? "error"}`}
+              {createResp.ok
+                ? "Service created"
+                : `${createResp.stage ? createResp.stage + " · " : ""}HTTP ${
+                    createResp.status ?? "error"
+                  }`}
             </span>
           </div>
-          {createResp.error ? <p className="text-sm text-red-700">{createResp.error}</p> : null}
+          {createResp.error ? (
+            <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
+              {createResp.error}
+            </p>
+          ) : null}
           {created ? (
             <div className="space-y-3 text-sm">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500">
                   client_id
                 </p>
-                <code className="mt-1 block break-all rounded bg-zinc-100 px-2 py-1.5 font-mono text-xs">
-                  {createResp.clientId}
-                </code>
+                <div className="mt-1 flex items-center gap-2">
+                  <code className="block w-full break-all rounded bg-zinc-100 px-2 py-1.5 font-mono text-xs">
+                    {createResp.clientId}
+                  </code>
+                  <button
+                    type="button"
+                    onClick={() => copy(createResp.clientId!)}
+                    className="rounded-md border border-zinc-300 px-2 py-1 text-xs text-zinc-700 hover:border-zinc-900"
+                  >
+                    Copy
+                  </button>
+                </div>
               </div>
               <div>
                 <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500">
                   client_secret
                 </p>
-                <code className="mt-1 block break-all rounded bg-zinc-100 px-2 py-1.5 font-mono text-xs">
-                  {createResp.clientSecret}
-                </code>
+                <div className="mt-1 flex items-center gap-2">
+                  <code className="block w-full break-all rounded bg-zinc-100 px-2 py-1.5 font-mono text-xs">
+                    {createResp.clientSecret}
+                  </code>
+                  <button
+                    type="button"
+                    onClick={() => copy(createResp.clientSecret!)}
+                    className="rounded-md border border-zinc-300 px-2 py-1 text-xs text-zinc-700 hover:border-zinc-900"
+                  >
+                    Copy
+                  </button>
+                </div>
                 <p className="mt-1 text-xs text-amber-700">
-                  Stored in your browser only. Copy it now — you can&rsquo;t retrieve it again.
+                  Stored in your browser only. Copy now — you can&rsquo;t retrieve the secret again.
                 </p>
               </div>
               <Link
@@ -317,7 +328,7 @@ export default function CreateServiceTester() {
           <details className="mt-4 text-sm">
             <summary className="cursor-pointer text-zinc-700">Full response</summary>
             <pre className="mt-2 max-h-72 overflow-auto rounded-md bg-zinc-900 p-3 text-xs leading-relaxed text-zinc-100">
-              <code>{JSON.stringify(createResp.body, null, 2)}</code>
+              <code>{JSON.stringify(createResp.body ?? createResp, null, 2)}</code>
             </pre>
           </details>
         </div>
@@ -328,7 +339,7 @@ export default function CreateServiceTester() {
           <h3 className="text-sm font-semibold text-zinc-900">Publish branch</h3>
           <p className="mt-1 text-sm text-zinc-600">
             Make the new service discoverable in the SuperApp by saving and switching to a new
-            branch. This mirrors <code>create_miniapps.py</code> exactly.
+            branch. Mirrors <code>create_miniapps.py</code> exactly.
           </p>
           <button
             type="button"
@@ -340,6 +351,11 @@ export default function CreateServiceTester() {
           </button>
           {publishResp ? (
             <div className="mt-4 space-y-2 text-sm">
+              {publishResp.error ? (
+                <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
+                  {publishResp.error}
+                </p>
+              ) : null}
               {(["touch", "save", "publish", "switch"] as const).map((step) => {
                 const r = publishResp[step];
                 return (

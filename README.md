@@ -23,18 +23,36 @@ a new integrator from zero to a working API call against KOBIL **Identity**, **C
 ## Local development
 
 ```bash
+cp .env.example .env.local   # then fill in real values
 npm install
 npm run dev
 ```
 
 Open <http://localhost:3000>.
 
+## Environment variables
+
+Step 1 logs into SmartDashboard via Keycloak on the server. Two env vars are required:
+
+| Variable                  | Used in                                         |
+| ------------------------- | ----------------------------------------------- |
+| `SMARTDASHBOARD_USERNAME` | `lib/smartdashboard.ts` — Keycloak login submit |
+| `SMARTDASHBOARD_PASSWORD` | `lib/smartdashboard.ts` — Keycloak login submit |
+
+- **Locally**, put them in `.env.local` (gitignored).
+- **On Vercel**, add them in **Project Settings → Environment Variables**. Without them, the
+  create-service form returns a 500 with a clear error.
+
+Credentials are never sent to the browser — they only exist on the server route.
+
 ## Deploy
 
-This site deploys to Vercel with zero config. Either:
+This site deploys to Vercel with zero config:
 
-- Push to GitHub, then import the repo at <https://vercel.com/new>, **or**
-- Run `vercel deploy` from this directory with the [Vercel CLI](https://vercel.com/docs/cli).
+1. Push to GitHub (already done).
+2. Import the repo at <https://vercel.com/new> (or click the **Deploy with Vercel** badge above).
+3. In the import dialog, add the two env vars from the table above.
+4. Hit Deploy.
 
 ## Source of truth
 

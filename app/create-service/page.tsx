@@ -50,10 +50,9 @@ export default function CreateServicePage() {
 
       <h2 className="mt-10 text-lg font-semibold text-zinc-900">Create a service now</h2>
       <p className="mt-2 text-zinc-700">
-        Fill in the form below to create a real service against your SmartDashboard tenant. The
-        request is proxied server-side so it works cross-origin. On success, your{" "}
-        <code>client_id</code> and <code>client_secret</code> are saved in your browser and
-        pre-filled in step 2.
+        Fill in the form below. The server handles the SmartDashboard login (Keycloak form-post)
+        and POSTs your service definition in one go. On success, your <code>client_id</code> and{" "}
+        <code>client_secret</code> are saved in your browser and pre-filled in step 2.
       </p>
       <div className="mt-4">
         <CreateServiceTester />
