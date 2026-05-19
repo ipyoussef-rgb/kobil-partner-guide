@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { SmartDashboardClient } from "../../../../lib/smartdashboard";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 type PublishBody = {
   smartdashboardBaseUrl?: string;
