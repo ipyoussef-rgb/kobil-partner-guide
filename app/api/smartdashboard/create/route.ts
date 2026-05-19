@@ -60,7 +60,10 @@ export async function POST(req: NextRequest) {
     await client.authenticate();
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Authentication failed";
-    return NextResponse.json({ ok: false, stage: "authenticate", error: msg }, { status: 502 });
+    return NextResponse.json(
+      { ok: false, stage: "authenticate", error: msg, trace: client.getTrace() },
+      { status: 502 },
+    );
   }
 
   try {

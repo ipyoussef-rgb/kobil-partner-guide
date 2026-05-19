@@ -42,6 +42,10 @@ class CookieJar {
     if (!bucket || bucket.size === 0) return "";
     return [...bucket.entries()].map(([k, v]) => `${k}=${v}`).join("; ");
   }
+
+  hosts(): string[] {
+    return [...this.byHost.keys()];
+  }
 }
 
 // --- Fetch with cookie jar + manual redirect following ------------------------
@@ -170,10 +174,11 @@ function parseLoginForm(html: string, baseUrl: string): LoginForm | null {
 }
 
 function looksLikeLoginPage(html: string): boolean {
-  const lower = html.toLowerCase();
-  if (lower.includes("kc-form-login")) return true;
-  if (lower.includes("login-actions/authenticate")) return true;
-  return lower.includes("<form") && lower.includes("password") && lower.includes("username");
+  if (/class=["'][^"']*\bkc-form-login\b/i.test(html)) return true;
+  if (/id=["'][^"']*\bkc-form-login\b/i.test(html)) return true;
+  if (/action=["'][^"']*login-actions\/authenticate/i.test(html)) return true;
+  // A *rendered* password input is the surest sign — SPA shells don't ship one.
+  return /<input[^>]+type=["']?password\b/i.test(html);
 }
 
 // --- Service payload ----------------------------------------------------------
@@ -213,12 +218,25 @@ export function buildServicePayload(s: ServiceDefinition) {
 
 // --- Client -------------------------------------------------------------------
 
+export type AuthTraceStep = {
+  step: string;
+  url?: string;
+  status?: number;
+  isLoginPage?: boolean;
+  formAction?: string;
+  fieldCount?: number;
+  cookieHostsTracked?: string[];
+  htmlPreview?: string;
+  error?: string;
+};
+
 export class SmartDashboardClient {
   readonly baseUrl: string;
   readonly tenant: string;
   private readonly username: string;
   private readonly password: string;
   private readonly jar = new CookieJar();
+  private readonly trace: AuthTraceStep[] = [];
   private authed = false;
 
   constructor(opts: { baseUrl: string; tenant: string; username?: string; password?: string }) {
@@ -236,6 +254,10 @@ export class SmartDashboardClient {
     return !!(this.username && this.password);
   }
 
+  getTrace(): AuthTraceStep[] {
+    return this.trace;
+  }
+
   async authenticate(): Promise<void> {
     if (this.authed) return;
     if (!this.hasCredentials()) {
@@ -245,13 +267,26 @@ export class SmartDashboardClient {
     }
     const appUrl = `${this.baseUrl}/dashboard/${this.tenant}/app-builder`;
     const initial = await fetchWithJar(appUrl, { method: "GET" }, this.jar);
+    const initialIsLogin = looksLikeLoginPage(initial.text);
+    this.trace.push({
+      step: "initial-get",
+      url: initial.finalUrl,
+      status: initial.response.status,
+      isLoginPage: initialIsLogin,
+      htmlPreview: initial.text.slice(0, 300),
+    });
 
-    if (!looksLikeLoginPage(initial.text)) {
+    if (!initialIsLogin) {
       this.authed = true;
       return;
     }
 
     const form = parseLoginForm(initial.text, initial.finalUrl);
+    this.trace.push({
+      step: "parse-form",
+      formAction: form?.action,
+      fieldCount: form ? Object.keys(form.fields).length : 0,
+    });
     if (!form) throw new Error("Could not locate Keycloak login form");
 
     form.fields.username = this.username;
@@ -260,7 +295,7 @@ export class SmartDashboardClient {
     const body = new URLSearchParams();
     for (const [k, v] of Object.entries(form.fields)) body.set(k, v);
 
-    await fetchWithJar(
+    const submit = await fetchWithJar(
       form.action,
       {
         method: "POST",
@@ -269,9 +304,27 @@ export class SmartDashboardClient {
       },
       this.jar,
     );
+    this.trace.push({
+      step: "login-submit",
+      url: submit.finalUrl,
+      status: submit.response.status,
+      isLoginPage: looksLikeLoginPage(submit.text),
+      htmlPreview: submit.text.slice(0, 300),
+      cookieHostsTracked: this.jar.hosts(),
+    });
 
     const verify = await fetchWithJar(appUrl, { method: "GET" }, this.jar);
-    if (looksLikeLoginPage(verify.text)) {
+    const verifyIsLogin = looksLikeLoginPage(verify.text);
+    this.trace.push({
+      step: "verify",
+      url: verify.finalUrl,
+      status: verify.response.status,
+      isLoginPage: verifyIsLogin,
+      htmlPreview: verify.text.slice(0, 300),
+      cookieHostsTracked: this.jar.hosts(),
+    });
+
+    if (verifyIsLogin) {
       throw new Error("Authentication failed — credentials rejected by SmartDashboard");
     }
     this.authed = true;

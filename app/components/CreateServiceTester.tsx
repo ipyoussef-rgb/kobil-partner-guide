@@ -24,6 +24,7 @@ type CreateResp = {
   clientId?: string;
   clientSecret?: string;
   error?: string;
+  trace?: unknown;
 };
 
 type StepResult = { ok: boolean; status: number; error?: string };
@@ -277,6 +278,14 @@ export default function CreateServiceTester() {
             <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
               {createResp.error}
             </p>
+          ) : null}
+          {Array.isArray(createResp.trace) && createResp.trace.length > 0 ? (
+            <details className="mt-3 text-sm" open>
+              <summary className="cursor-pointer text-zinc-700">Auth trace</summary>
+              <pre className="mt-2 max-h-96 overflow-auto rounded-md bg-zinc-900 p-3 text-[11px] leading-snug text-zinc-100">
+                <code>{JSON.stringify(createResp.trace, null, 2)}</code>
+              </pre>
+            </details>
           ) : null}
           {created ? (
             <div className="space-y-3 text-sm">
