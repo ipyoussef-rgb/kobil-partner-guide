@@ -1,36 +1,46 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# KOBIL Partner Developer Guide
 
-## Getting Started
+An interactive partner-developer guide for building on the **KOBIL SuperApp** platform. Walks
+a new integrator from zero to a working API call against KOBIL **Identity**, **Chat**, **Pay**,
+**Signature**, and **TMS** in three steps.
 
-First, run the development server:
+- **Step 1** — Create a service in SmartDashboard and get back `client_id`, `client_secret`,
+  and the well-known OpenID configuration. Mirrors the flow in `create_miniapps.py`.
+- **Step 2** — Exchange `client_id` / `client_secret` for an access token via the service-account
+  (`client_credentials`) flow. The form proxies through a Next.js route handler so it works
+  cross-origin.
+- **Step 3** — Send real requests to the KOBIL APIs from your browser with pre-built samples
+  for each product.
+
+## Stack
+
+- Next.js 16 (App Router) + Turbopack
+- React 19
+- Tailwind CSS v4
+
+## Local development
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open <http://localhost:3000>.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Deploy
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+This site deploys to Vercel with zero config. Either:
 
-## Learn More
+- Push to GitHub, then import the repo at <https://vercel.com/new>, **or**
+- Run `vercel deploy` from this directory with the [Vercel CLI](https://vercel.com/docs/cli).
 
-To learn more about Next.js, take a look at the following resources:
+## Source of truth
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+The wording and API shapes are drawn from KOBIL&rsquo;s official documentation:
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+- <https://documentation.cloud.kobil.com/>
+- <https://documentation.cloud.kobil.com/api/>
+- <https://documentation.cloud.kobil.com/guides/category/core-integrations/>
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+This is an **unofficial** guide intended for partner-developer onboarding. Always cross-check
+endpoints, request bodies, and field names against the official API reference for your tenant.
