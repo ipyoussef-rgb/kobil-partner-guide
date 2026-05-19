@@ -24,6 +24,7 @@ type CreateResp = {
   clientId?: string;
   clientSecret?: string;
   error?: string;
+  upstreamMessage?: string;
   trace?: unknown;
 };
 
@@ -275,12 +276,25 @@ export default function CreateServiceTester() {
             </span>
           </div>
           {createResp.error ? (
-            <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
-              {createResp.error}
-            </p>
+            <div className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
+              <p className="font-medium">{createResp.error}</p>
+              {createResp.upstreamMessage ? (
+                <p className="mt-1 text-red-800">
+                  <span className="font-medium">SmartDashboard says: </span>
+                  {createResp.upstreamMessage}
+                </p>
+              ) : null}
+              {createResp.stage === "authenticate" ? (
+                <p className="mt-2 text-xs text-red-700/80">
+                  Verify the credentials by logging in manually at your SmartDashboard URL. The
+                  server reads them from <code>SMARTDASHBOARD_USERNAME</code> /{" "}
+                  <code>SMARTDASHBOARD_PASSWORD</code> environment variables.
+                </p>
+              ) : null}
+            </div>
           ) : null}
           {Array.isArray(createResp.trace) && createResp.trace.length > 0 ? (
-            <details className="mt-3 text-sm" open>
+            <details className="mt-3 text-sm">
               <summary className="cursor-pointer text-zinc-700">Auth trace</summary>
               <pre className="mt-2 max-h-96 overflow-auto rounded-md bg-zinc-900 p-3 text-[11px] leading-snug text-zinc-100">
                 <code>{JSON.stringify(createResp.trace, null, 2)}</code>

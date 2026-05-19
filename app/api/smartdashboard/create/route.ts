@@ -60,8 +60,12 @@ export async function POST(req: NextRequest) {
     await client.authenticate();
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Authentication failed";
+    const trace = client.getTrace();
+    const upstreamMessage = trace
+      .map((t) => t.errorMessage)
+      .find((m): m is string => !!m);
     return NextResponse.json(
-      { ok: false, stage: "authenticate", error: msg, trace: client.getTrace() },
+      { ok: false, stage: "authenticate", error: msg, upstreamMessage, trace },
       { status: 502 },
     );
   }

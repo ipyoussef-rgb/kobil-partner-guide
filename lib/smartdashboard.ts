@@ -46,6 +46,14 @@ class CookieJar {
   hosts(): string[] {
     return [...this.byHost.keys()];
   }
+
+  namesByHost(): Record<string, string[]> {
+    const out: Record<string, string[]> = {};
+    for (const [host, bucket] of this.byHost.entries()) {
+      out[host] = [...bucket.keys()];
+    }
+    return out;
+  }
 }
 
 // --- Fetch with cookie jar + manual redirect following ------------------------
@@ -181,6 +189,61 @@ function looksLikeLoginPage(html: string): boolean {
   return /<input[^>]+type=["']?password\b/i.test(html);
 }
 
+function pickField(fieldNames: string[], candidates: string[]): string | undefined {
+  for (const target of candidates) {
+    const exact = fieldNames.find((n) => n.toLowerCase() === target);
+    if (exact) return exact;
+  }
+  for (const target of candidates) {
+    const partial = fieldNames.find((n) => n.toLowerCase().includes(target));
+    if (partial) return partial;
+  }
+  return undefined;
+}
+
+function extractKcError(html: string): string | undefined {
+  const candidates = [
+    /<[^>]*class=["'][^"']*kc-feedback-text[^"']*["'][^>]*>([\s\S]*?)<\//i,
+    /<[^>]*id=["']kc-error-text["'][^>]*>([\s\S]*?)<\//i,
+    /<[^>]*class=["'][^"']*alert(?:-error)?[^"']*["'][^>]*>([\s\S]*?)<\//i,
+    /<[^>]*class=["'][^"']*feedback[^"']*["'][^>]*>([\s\S]*?)<\//i,
+    /<[^>]*class=["'][^"']*pf-c-alert[^"']*["'][^>]*>([\s\S]*?)<\//i,
+    /<[^>]+(?:class|id)=["'][^"']*error[^"']*["'][^>]*>([\s\S]*?)<\//i,
+    /<span[^>]*role=["']alert["'][^>]*>([\s\S]*?)<\/span>/i,
+  ];
+  for (const re of candidates) {
+    const m = html.match(re);
+    if (m) {
+      const text = m[1]
+        .replace(/<[^>]+>/g, "")
+        .replace(/&nbsp;/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+      if (text) return text.slice(0, 280);
+    }
+  }
+  return undefined;
+}
+
+function extractFormBlock(html: string): string | undefined {
+  const start = html.search(/<form\b[^>]*action=["'][^"']*login-actions\/authenticate/i);
+  if (start < 0) return undefined;
+  const end = html.toLowerCase().indexOf("</form>", start);
+  if (end < 0) return undefined;
+  return html.slice(start, end + 7).slice(0, 2500);
+}
+
+function extractBodyPreview(html: string): string {
+  const bodyMatch = html.match(/<body\b[^>]*>/i);
+  const start = bodyMatch ? bodyMatch.index! + bodyMatch[0].length : 0;
+  return html
+    .slice(start, start + 2500)
+    .replace(/<script[\s\S]*?<\/script>/gi, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 2000);
+}
+
 // --- Service payload ----------------------------------------------------------
 
 export type ServiceDefinition = {
@@ -225,8 +288,12 @@ export type AuthTraceStep = {
   isLoginPage?: boolean;
   formAction?: string;
   fieldCount?: number;
+  fieldNames?: string[];
   cookieHostsTracked?: string[];
-  htmlPreview?: string;
+  cookieNamesByHost?: Record<string, string[]>;
+  bodyPreview?: string;
+  formBlock?: string;
+  errorMessage?: string;
   error?: string;
 };
 
@@ -273,7 +340,8 @@ export class SmartDashboardClient {
       url: initial.finalUrl,
       status: initial.response.status,
       isLoginPage: initialIsLogin,
-      htmlPreview: initial.text.slice(0, 300),
+      bodyPreview: extractBodyPreview(initial.text),
+      formBlock: extractFormBlock(initial.text),
     });
 
     if (!initialIsLogin) {
@@ -282,15 +350,19 @@ export class SmartDashboardClient {
     }
 
     const form = parseLoginForm(initial.text, initial.finalUrl);
+    const fieldNames = form ? Object.keys(form.fields) : [];
     this.trace.push({
       step: "parse-form",
       formAction: form?.action,
-      fieldCount: form ? Object.keys(form.fields).length : 0,
+      fieldCount: fieldNames.length,
+      fieldNames,
     });
     if (!form) throw new Error("Could not locate Keycloak login form");
 
-    form.fields.username = this.username;
-    form.fields.password = this.password;
+    const userFieldName = pickField(fieldNames, ["username", "email", "user", "login"]) ?? "username";
+    const passFieldName = pickField(fieldNames, ["password", "credential", "secret"]) ?? "password";
+    form.fields[userFieldName] = this.username;
+    form.fields[passFieldName] = this.password;
 
     const body = new URLSearchParams();
     for (const [k, v] of Object.entries(form.fields)) body.set(k, v);
@@ -309,8 +381,11 @@ export class SmartDashboardClient {
       url: submit.finalUrl,
       status: submit.response.status,
       isLoginPage: looksLikeLoginPage(submit.text),
-      htmlPreview: submit.text.slice(0, 300),
+      bodyPreview: extractBodyPreview(submit.text),
+      errorMessage: extractKcError(submit.text),
       cookieHostsTracked: this.jar.hosts(),
+      cookieNamesByHost: this.jar.namesByHost(),
+      fieldNames: [userFieldName, passFieldName],
     });
 
     const verify = await fetchWithJar(appUrl, { method: "GET" }, this.jar);
@@ -320,7 +395,8 @@ export class SmartDashboardClient {
       url: verify.finalUrl,
       status: verify.response.status,
       isLoginPage: verifyIsLogin,
-      htmlPreview: verify.text.slice(0, 300),
+      bodyPreview: extractBodyPreview(verify.text),
+      errorMessage: extractKcError(verify.text),
       cookieHostsTracked: this.jar.hosts(),
     });
 
