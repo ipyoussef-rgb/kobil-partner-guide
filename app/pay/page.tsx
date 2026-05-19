@@ -80,10 +80,16 @@ export default function PayPage() {
           Get a token →
         </Link>
         <Link
-          href="/api-tester?product=pay"
+          href="/api-tester?product=pay&sample=create"
           className="rounded-full border border-zinc-300 px-5 py-2.5 text-sm font-medium text-zinc-800 hover:border-zinc-900"
         >
-          Open Pay in the API tester
+          Try: create a transaction
+        </Link>
+        <Link
+          href="/api-tester?product=pay&sample=refund"
+          className="rounded-full border border-zinc-300 px-5 py-2.5 text-sm font-medium text-zinc-800 hover:border-zinc-900"
+        >
+          Try: refund a transaction
         </Link>
       </div>
     </Container>

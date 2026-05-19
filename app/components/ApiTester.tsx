@@ -175,7 +175,13 @@ type Resp = {
   error?: string;
 };
 
-export default function ApiTester({ initialProductKey }: { initialProductKey?: string }) {
+export default function ApiTester({
+  initialProductKey,
+  initialSampleId,
+}: {
+  initialProductKey?: string;
+  initialSampleId?: string;
+}) {
   const initialIdx = useMemo(() => {
     if (!initialProductKey) return 0;
     const idx = PRODUCTS.findIndex((p) => p.key === initialProductKey);
@@ -185,12 +191,19 @@ export default function ApiTester({ initialProductKey }: { initialProductKey?: s
   const [productKey, setProductKey] = useState(PRODUCTS[initialIdx].key);
   const product = useMemo(() => PRODUCTS.find((p) => p.key === productKey)!, [productKey]);
 
+  const initialSample = useMemo(() => {
+    const fromQuery = initialSampleId
+      ? product.samples.find((s) => s.id === initialSampleId)
+      : null;
+    return fromQuery ?? product.samples[0];
+  }, [product, initialSampleId]);
+
   const [baseUrls, setBaseUrls] = useState<Record<string, string>>({});
   const [accessToken, setAccessToken] = useState("");
-  const [sampleId, setSampleId] = useState(product.samples[0].id);
-  const [method, setMethod] = useState<Method>(product.samples[0].method);
-  const [path, setPath] = useState(product.samples[0].path);
-  const [body, setBody] = useState(product.samples[0].body ?? "");
+  const [sampleId, setSampleId] = useState(initialSample.id);
+  const [method, setMethod] = useState<Method>(initialSample.method);
+  const [path, setPath] = useState(initialSample.path);
+  const [body, setBody] = useState(initialSample.body ?? "");
   const [extraHeaders, setExtraHeaders] = useState("");
   const [loading, setLoading] = useState(false);
   const [resp, setResp] = useState<Resp | null>(null);
@@ -216,9 +229,11 @@ export default function ApiTester({ initialProductKey }: { initialProductKey?: s
     setBody(s.body ?? "");
   }, [sampleId, product]);
 
-  useEffect(() => {
-    setSampleId(product.samples[0].id);
-  }, [product]);
+  function selectProduct(key: string) {
+    setProductKey(key);
+    const next = PRODUCTS.find((p) => p.key === key);
+    if (next) setSampleId(next.samples[0].id);
+  }
 
   function setBase(value: string) {
     const next = { ...baseUrls, [product.key]: value };
@@ -285,7 +300,7 @@ export default function ApiTester({ initialProductKey }: { initialProductKey?: s
             <button
               key={p.key}
               type="button"
-              onClick={() => setProductKey(p.key)}
+              onClick={() => selectProduct(p.key)}
               className={`flex-1 rounded-lg px-3 py-2 text-sm font-medium transition ${
                 p.key === productKey
                   ? "bg-zinc-900 text-white"

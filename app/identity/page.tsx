@@ -90,10 +90,16 @@ export default function IdentityPage() {
           Try: get a service-account token →
         </Link>
         <Link
-          href="/api-tester?product=identity"
+          href="/api-tester?product=identity&sample=well-known"
           className="rounded-full border border-zinc-300 px-5 py-2.5 text-sm font-medium text-zinc-800 hover:border-zinc-900"
         >
-          Open Identity in the API tester
+          Try: GET .well-known/openid-configuration
+        </Link>
+        <Link
+          href="/api-tester?product=identity&sample=userinfo"
+          className="rounded-full border border-zinc-300 px-5 py-2.5 text-sm font-medium text-zinc-800 hover:border-zinc-900"
+        >
+          Try: GET userinfo
         </Link>
       </div>
     </Container>

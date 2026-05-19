@@ -10,6 +10,16 @@ type TokenResp = {
 
 const STORAGE_KEY = "kobil-token-tester-v1";
 const TOKEN_KEY = "kobil-access-token-v1";
+const CREDS_KEY = "kobil-service-credentials-v1";
+
+type ServiceCreds = {
+  clientId?: string;
+  clientSecret?: string;
+  smartdashboardBaseUrl?: string;
+  tenant?: string;
+  name?: string;
+  createdAt?: string;
+};
 
 type Stored = {
   tokenUrl: string;
@@ -27,23 +37,41 @@ export default function TokenTester() {
   const [response, setResponse] = useState<TokenResp | null>(null);
   const [accessToken, setAccessToken] = useState<string>("");
   const [showSecret, setShowSecret] = useState(false);
+  const [serviceCreds, setServiceCreds] = useState<ServiceCreds | null>(null);
 
   useEffect(() => {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) {
-        const parsed: Stored = JSON.parse(raw);
-        setTokenUrl(parsed.tokenUrl || "");
-        setClientId(parsed.clientId || "");
-        setClientSecret(parsed.clientSecret || "");
-        setScope(parsed.scope || "");
+      const parsed = raw ? (JSON.parse(raw) as Stored) : null;
+      const credsRaw = localStorage.getItem(CREDS_KEY);
+      const creds = credsRaw ? (JSON.parse(credsRaw) as ServiceCreds) : null;
+
+      const formAlreadyHasValues = !!(parsed?.clientId || parsed?.clientSecret);
+
+      setTokenUrl(parsed?.tokenUrl || "");
+      setScope(parsed?.scope || "");
+
+      if (!formAlreadyHasValues && creds?.clientId && creds?.clientSecret) {
+        setClientId(creds.clientId);
+        setClientSecret(creds.clientSecret);
+      } else {
+        setClientId(parsed?.clientId || "");
+        setClientSecret(parsed?.clientSecret || "");
       }
+      if (creds) setServiceCreds(creds);
+
       const tok = localStorage.getItem(TOKEN_KEY);
       if (tok) setAccessToken(tok);
     } catch {
       /* ignore */
     }
   }, []);
+
+  function applyCreds() {
+    if (!serviceCreds) return;
+    if (serviceCreds.clientId) setClientId(serviceCreds.clientId);
+    if (serviceCreds.clientSecret) setClientSecret(serviceCreds.clientSecret);
+  }
 
   function persist() {
     try {
@@ -98,6 +126,29 @@ export default function TokenTester() {
 
   return (
     <div className="space-y-6">
+      {serviceCreds?.clientId && serviceCreds?.clientSecret ? (
+        <div className="rounded-lg border border-green-200 bg-green-50 p-4 text-sm">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="font-semibold text-green-900">
+                Credentials from step 1 are loaded
+              </p>
+              <p className="text-xs text-green-800">
+                Service <code>{serviceCreds.name || serviceCreds.clientId}</code>
+                {serviceCreds.tenant ? <> on tenant <code>{serviceCreds.tenant}</code></> : null}.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={applyCreds}
+              className="rounded-full border border-green-300 px-3 py-1 text-xs font-medium text-green-900 hover:border-green-500"
+            >
+              Re-apply
+            </button>
+          </div>
+        </div>
+      ) : null}
+
       <form
         onSubmit={fetchToken}
         className="rounded-xl border border-zinc-200 bg-white p-5 shadow-sm"

@@ -82,16 +82,16 @@ export default function SignaturePage() {
 
       <div className="mt-10 flex flex-wrap gap-3">
         <Link
-          href="/chat"
-          className="rounded-full border border-zinc-300 px-5 py-2.5 text-sm font-medium text-zinc-800 hover:border-zinc-900"
+          href="/api-tester?product=chat&sample=send-signature"
+          className="rounded-full bg-[var(--accent)] px-5 py-2.5 text-sm font-medium text-white hover:bg-[var(--accent-hover)]"
         >
-          Go to Chat guide
+          Try: PDF signature via Chat
         </Link>
         <Link
-          href="/tms"
+          href="/api-tester?product=tms&sample=start"
           className="rounded-full border border-zinc-300 px-5 py-2.5 text-sm font-medium text-zinc-800 hover:border-zinc-900"
         >
-          Go to TMS guide
+          Try: transaction signature via TMS
         </Link>
       </div>
     </Container>

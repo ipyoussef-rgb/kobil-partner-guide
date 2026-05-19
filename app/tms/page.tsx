@@ -76,10 +76,16 @@ export default function TmsPage() {
           Get a token →
         </Link>
         <Link
-          href="/api-tester?product=tms"
+          href="/api-tester?product=tms&sample=start"
           className="rounded-full border border-zinc-300 px-5 py-2.5 text-sm font-medium text-zinc-800 hover:border-zinc-900"
         >
-          Open TMS in the API tester
+          Try: start a transaction
+        </Link>
+        <Link
+          href="/api-tester?product=tms&sample=result"
+          className="rounded-full border border-zinc-300 px-5 py-2.5 text-sm font-medium text-zinc-800 hover:border-zinc-900"
+        >
+          Try: get the signed result
         </Link>
       </div>
     </Container>

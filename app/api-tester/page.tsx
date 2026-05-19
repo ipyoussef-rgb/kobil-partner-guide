@@ -5,12 +5,17 @@ import ApiTester from "../components/ApiTester";
 
 export const metadata = { title: "API Tester — Partner Guide" };
 
-type SearchParamsPromise = Promise<{ product?: string | string[] }>;
+type SearchParamsPromise = Promise<{
+  product?: string | string[];
+  sample?: string | string[];
+}>;
 
 export default async function ApiTesterPage({ searchParams }: { searchParams: SearchParamsPromise }) {
   const params = await searchParams;
-  const raw = params?.product;
-  const product = Array.isArray(raw) ? raw[0] : raw;
+  const productRaw = params?.product;
+  const sampleRaw = params?.sample;
+  const product = Array.isArray(productRaw) ? productRaw[0] : productRaw;
+  const sample = Array.isArray(sampleRaw) ? sampleRaw[0] : sampleRaw;
 
   return (
     <Container>
@@ -20,7 +25,7 @@ export default async function ApiTesterPage({ searchParams }: { searchParams: Se
         tagline="Pick a product, edit a sample request, and send it through this site&rsquo;s proxy. Your access token (from step 2) is added automatically."
       />
 
-      <ApiTester initialProductKey={product} />
+      <ApiTester initialProductKey={product} initialSampleId={sample} />
 
       <div className="mt-10 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
         <strong>Heads up.</strong>{" "}Requests are proxied server-side from this site so CORS

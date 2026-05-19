@@ -3,6 +3,7 @@ import Container from "../components/Container";
 import PageHeader from "../components/PageHeader";
 import Steps from "../components/Steps";
 import CodeBlock from "../components/CodeBlock";
+import CreateServiceTester from "../components/CreateServiceTester";
 
 export const metadata = { title: "Create a service — Partner Guide" };
 
@@ -47,11 +48,22 @@ export default function CreateServicePage() {
         <li>A public callback URL where your MiniApp is reachable.</li>
       </ul>
 
-      <h2 className="mt-8 text-lg font-semibold text-zinc-900">Two ways to create a service</h2>
+      <h2 className="mt-10 text-lg font-semibold text-zinc-900">Create a service now</h2>
       <p className="mt-2 text-zinc-700">
-        You can do this either through the SmartDashboard UI or programmatically via the
-        SmartDashboard API. The script <code>create_miniapps.py</code> ships a working reference of
-        the API flow.
+        Fill in the form below to create a real service against your SmartDashboard tenant. The
+        request is proxied server-side so it works cross-origin. On success, your{" "}
+        <code>client_id</code> and <code>client_secret</code> are saved in your browser and
+        pre-filled in step 2.
+      </p>
+      <div className="mt-4">
+        <CreateServiceTester />
+      </div>
+
+      <h2 className="mt-12 text-lg font-semibold text-zinc-900">Two ways to create a service</h2>
+      <p className="mt-2 text-zinc-700">
+        You can also do this through the SmartDashboard UI, or programmatically using the same
+        contract the form above uses. The script <code>create_miniapps.py</code> ships a working
+        reference of the full API flow.
       </p>
 
       <h2 className="mt-8 text-lg font-semibold text-zinc-900">UI flow</h2>

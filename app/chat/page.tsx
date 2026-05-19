@@ -80,10 +80,16 @@ export default function ChatPage() {
           Get a token →
         </Link>
         <Link
-          href="/api-tester?product=chat"
+          href="/api-tester?product=chat&sample=send-text"
           className="rounded-full border border-zinc-300 px-5 py-2.5 text-sm font-medium text-zinc-800 hover:border-zinc-900"
         >
-          Open Chat in the API tester
+          Try: send a text message
+        </Link>
+        <Link
+          href="/api-tester?product=chat&sample=send-signature"
+          className="rounded-full border border-zinc-300 px-5 py-2.5 text-sm font-medium text-zinc-800 hover:border-zinc-900"
+        >
+          Try: send a PDF signature request
         </Link>
       </div>
     </Container>
