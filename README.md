@@ -1,5 +1,7 @@
 # KOBIL Partner Developer Guide
 
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fipyoussef-rgb%2Fkobil-partner-guide&project-name=kobil-partner-guide&repository-name=kobil-partner-guide)
+
 An interactive partner-developer guide for building on the **KOBIL SuperApp** platform. Walks
 a new integrator from zero to a working API call against KOBIL **Identity**, **Chat**, **Pay**,
 **Signature**, and **TMS** in three steps.
