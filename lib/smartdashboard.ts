@@ -336,8 +336,13 @@ export class SmartDashboardClient {
   private authed = false;
 
   constructor(opts: { baseUrl: string; tenant: string; username?: string; password?: string }) {
-    this.baseUrl = opts.baseUrl.replace(/\/+$/, "");
-    this.tenant = opts.tenant;
+    // Normalize: strip trailing slash, then a trailing /dashboard if the user
+    // pasted the URL with the SmartDashboard app path included. Otherwise the
+    // redirect URI we construct doubles up: /dashboard/dashboard/{tenant}/…
+    let base = opts.baseUrl.trim().replace(/\/+$/, "");
+    base = base.replace(/\/dashboard$/i, "");
+    this.baseUrl = base;
+    this.tenant = opts.tenant.trim();
     // .trim() catches accidental trailing whitespace/newlines that creep in
     // via Vercel's env-var pasting UI.
     this.username = (opts.username ?? process.env.SMARTDASHBOARD_USERNAME ?? "").trim();
