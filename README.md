@@ -39,9 +39,12 @@ Step 1 logs into SmartDashboard via Keycloak on the server. Two env vars are req
 | `SMARTDASHBOARD_USERNAME` | `lib/smartdashboard.ts` — Keycloak login submit |
 | `SMARTDASHBOARD_PASSWORD` | `lib/smartdashboard.ts` — Keycloak login submit |
 
-- **Locally**, put them in `.env.local` (gitignored).
-- **On Vercel**, add them in **Project Settings → Environment Variables**. Without them, the
-  create-service form returns a 500 with a clear error.
+- **Locally**, put them in `.env.local` (gitignored). **Quote any value containing `#`** —
+  dotenv treats unquoted `#` as an inline comment marker and silently truncates the line.
+  Example: `SMARTDASHBOARD_PASSWORD="Kobil123#"`.
+- **On Vercel**, add them in **Project Settings → Environment Variables**. Vercel stores values
+  literally (no comment parsing), so no quoting needed there. After changing them, **Redeploy**
+  the latest commit. Without them, the create-service form returns a 500 with a clear error.
 
 Credentials are never sent to the browser — they only exist on the server route.
 

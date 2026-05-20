@@ -202,6 +202,13 @@ function pickField(fieldNames: string[], candidates: string[]): string | undefin
 }
 
 function extractKcError(html: string): string | undefined {
+  // Strip elements that carry a `d-none` (or `hidden`) class — those are
+  // template scaffolds for client-side validation, not actual server errors.
+  const cleaned = html.replace(
+    /<[^>]+class=["'][^"']*(?:\bd-none\b|\bhidden\b)[^"']*["'][^>]*>[\s\S]*?<\/(?:div|p|span|section)>/gi,
+    "",
+  );
+
   const candidates = [
     /<[^>]*class=["'][^"']*kc-feedback-text[^"']*["'][^>]*>([\s\S]*?)<\//i,
     /<[^>]*id=["']kc-error-text["'][^>]*>([\s\S]*?)<\//i,
@@ -212,7 +219,7 @@ function extractKcError(html: string): string | undefined {
     /<span[^>]*role=["']alert["'][^>]*>([\s\S]*?)<\/span>/i,
   ];
   for (const re of candidates) {
-    const m = html.match(re);
+    const m = cleaned.match(re);
     if (m) {
       const text = m[1]
         .replace(/<[^>]+>/g, "")
@@ -295,6 +302,11 @@ export type AuthTraceStep = {
   formBlock?: string;
   errorMessage?: string;
   error?: string;
+  // For credential-config step (never logs values)
+  usernameLength?: number;
+  passwordLength?: number;
+  usernameFingerprint?: string;
+  passwordEndsWithHash?: boolean;
 };
 
 export class SmartDashboardClient {
@@ -309,8 +321,10 @@ export class SmartDashboardClient {
   constructor(opts: { baseUrl: string; tenant: string; username?: string; password?: string }) {
     this.baseUrl = opts.baseUrl.replace(/\/+$/, "");
     this.tenant = opts.tenant;
-    this.username = opts.username ?? process.env.SMARTDASHBOARD_USERNAME ?? "";
-    this.password = opts.password ?? process.env.SMARTDASHBOARD_PASSWORD ?? "";
+    // .trim() catches accidental trailing whitespace/newlines that creep in
+    // via Vercel's env-var pasting UI.
+    this.username = (opts.username ?? process.env.SMARTDASHBOARD_USERNAME ?? "").trim();
+    this.password = (opts.password ?? process.env.SMARTDASHBOARD_PASSWORD ?? "").trim();
   }
 
   static fromEnv(opts: { baseUrl: string; tenant: string }) {
@@ -332,6 +346,18 @@ export class SmartDashboardClient {
         "Server is missing SMARTDASHBOARD_USERNAME / SMARTDASHBOARD_PASSWORD environment variables.",
       );
     }
+    // Record non-sensitive fingerprints so we can diagnose env-var truncation
+    // (most commonly: `#` treated as a comment marker by dotenv parsers).
+    this.trace.push({
+      step: "credential-config",
+      usernameLength: this.username.length,
+      passwordLength: this.password.length,
+      usernameFingerprint:
+        this.username.length > 0
+          ? `${this.username[0]}…${this.username[this.username.length - 1]}@${this.username.split("@")[1] ?? ""}`
+          : "",
+      passwordEndsWithHash: this.password.endsWith("#"),
+    });
     const appUrl = `${this.baseUrl}/dashboard/${this.tenant}/app-builder`;
     const initial = await fetchWithJar(appUrl, { method: "GET" }, this.jar);
     const initialIsLogin = looksLikeLoginPage(initial.text);
