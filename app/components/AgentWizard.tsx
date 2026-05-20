@@ -1134,7 +1134,7 @@ function EndpointForm({
         ? "Mercury base URL"
         : endpoint.host === "pay"
           ? "Pay base URL"
-          : "TMS base URL";
+          : "ASTS base URL (TMS host)";
 
   return (
     <div>

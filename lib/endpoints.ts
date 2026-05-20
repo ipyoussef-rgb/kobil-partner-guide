@@ -20,7 +20,10 @@ export type Category = "identity" | "chat" | "pay" | "sign" | "tms";
 
 export type ParamLocation = "path" | "query" | "header" | "body";
 
-export type ProductHost = "idp" | "mercury" | "pay" | "tms";
+// `asts` is the actual TMS host (KOBIL's "Authentication & Signing Toolkit
+// Server"). The documentation source derives it from the IDP host by
+// replacing `idp` → `asts`, so the convention is asts.{env}.
+export type ProductHost = "idp" | "mercury" | "pay" | "asts";
 
 export type Param = {
   name: string;
@@ -542,7 +545,7 @@ export const CATEGORIES: CategoryInfo[] = [
         name: "Sign a transaction (via TMS)",
         summary: "Start a TMS transaction the user must confirm and sign.",
         method: "POST",
-        host: "tms",
+        host: "asts",
         pathTemplate: "/v1/tenants/{tenant_name}/tms",
         params: [
           { name: "tenant_name", in: "path", required: true, defaultFrom: "tenant" },
@@ -556,7 +559,7 @@ export const CATEGORIES: CategoryInfo[] = [
     label: "TMS",
     tagline: "Transaction confirmation: start, check status, retrieve signed result.",
     description:
-      "KOBIL TMS lets you ask a user to confirm or reject a specific action on their device. The user reviews and signs; you read the result.",
+      "KOBIL TMS runs on the ASTS host — `asts.{env}`, derived from the IDP host by replacing 'idp' with 'asts' (confirmed in the documentation.cloud.kobil.com source). Ask a user to confirm or reject a specific action; the user reviews and signs on their device.",
     steps: [
       "Get an access token from Identity.",
       "POST a TMS transaction with tmsData, timeouts, and userId.",
@@ -569,7 +572,7 @@ export const CATEGORIES: CategoryInfo[] = [
         name: "Start TMS",
         summary: "Open a TMS transaction for user confirmation.",
         method: "POST",
-        host: "tms",
+        host: "asts",
         pathTemplate: "/v1/tenants/{tenant_name}/tms",
         params: [
           { name: "tenant_name", in: "path", required: true, defaultFrom: "tenant" },
@@ -581,7 +584,7 @@ export const CATEGORIES: CategoryInfo[] = [
         name: "Get TMS status",
         summary: "Read the pending/completed state of a TMS transaction.",
         method: "GET",
-        host: "tms",
+        host: "asts",
         pathTemplate: "/v1/tenants/{tenant_name}/tms/{tms_id}/status",
         params: [
           { name: "tenant_name", in: "path", required: true, defaultFrom: "tenant" },
@@ -593,7 +596,7 @@ export const CATEGORIES: CategoryInfo[] = [
         name: "Get TMS result",
         summary: "Read the signed result after the user confirms.",
         method: "GET",
-        host: "tms",
+        host: "asts",
         pathTemplate: "/v1/tenants/{tenant_name}/tms/{tms_id}/result",
         params: [
           { name: "tenant_name", in: "path", required: true, defaultFrom: "tenant" },
@@ -610,7 +613,11 @@ export function findCategory(key: string | undefined): CategoryInfo | undefined 
 
 /**
  * Derive per-product host names from the SmartDashboard base URL.
- *   smartdashboard.{env}  → idp.{env} | mercury.{env} | pay.{env} | tms.{env}
+ *   smartdashboard.{env}  → idp.{env} | mercury.{env} | pay.{env} | asts.{env}
+ *
+ * Confirmed against documentation.cloud.kobil.com source bundles:
+ *   - env-config.js exposes IDP_HOST / PAY_HOST / CHAT_HOST (= mercury)
+ *   - TMS endpoints take the IDP host and replace 'idp' with 'asts'
  */
 export function deriveProductBase(
   productHost: ProductHost,
