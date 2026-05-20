@@ -76,16 +76,16 @@ export default function Home() {
           </p>
           <div className="mt-8 flex flex-wrap gap-3">
             <Link
-              href="/create-service"
+              href="/agent"
               className="rounded-full bg-[var(--accent)] px-5 py-2.5 text-sm font-medium text-white hover:bg-[var(--accent-hover)]"
             >
-              Start: create a service
+              Start with the agent →
             </Link>
             <Link
-              href="/get-token"
+              href="/create-service"
               className="rounded-full border border-zinc-300 px-5 py-2.5 text-sm font-medium text-zinc-800 hover:border-zinc-900"
             >
-              I already have client credentials
+              Or jump to step-by-step pages
             </Link>
           </div>
         </div>

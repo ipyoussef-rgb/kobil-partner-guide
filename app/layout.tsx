@@ -13,6 +13,7 @@ export const metadata: Metadata = {
 };
 
 const flowLinks = [
+  { href: "/agent", label: "Agent" },
   { href: "/create-service", label: "1. Create service" },
   { href: "/get-token", label: "2. Get token" },
   { href: "/api-tester", label: "3. Try APIs" },
