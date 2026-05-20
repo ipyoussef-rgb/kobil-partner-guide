@@ -291,6 +291,7 @@ export function buildServicePayload(s: ServiceDefinition) {
 export type AuthTraceStep = {
   step: string;
   url?: string;
+  requestedUrl?: string;
   status?: number;
   isLoginPage?: boolean;
   formAction?: string;
@@ -307,7 +308,23 @@ export type AuthTraceStep = {
   passwordLength?: number;
   usernameFingerprint?: string;
   passwordEndsWithHash?: boolean;
+  // For oidc-config step
+  idpBaseUrl?: string;
+  realm?: string;
 };
+
+function randomHex(bytes: number): string {
+  const arr = new Uint8Array(bytes);
+  crypto.getRandomValues(arr);
+  return Array.from(arr, (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+function deriveIdpBaseUrl(smartdashboardBaseUrl: string): string {
+  const u = new URL(smartdashboardBaseUrl);
+  // Convention on KOBIL cloud: smartdashboard.{env} → idp.{env}, with /auth path
+  const idpHost = u.host.replace(/^smartdashboard\./, "idp.");
+  return `${u.protocol}//${idpHost}/auth`;
+}
 
 export class SmartDashboardClient {
   readonly baseUrl: string;
@@ -358,16 +375,44 @@ export class SmartDashboardClient {
           : "",
       passwordEndsWithHash: this.password.endsWith("#"),
     });
+
+    // We bypass SmartDashboard's redirect-to-Keycloak step. SmartDashboard
+    // unconditionally redirects to realms/master regardless of which tenant
+    // is in the URL path, so we construct the OIDC auth URL directly with
+    // the caller's tenant as the realm.
+    const idpBaseUrl = deriveIdpBaseUrl(this.baseUrl);
+    const realm = this.tenant;
+    const redirectUri = `${this.baseUrl}/dashboard/${this.tenant}/redirect-uri`;
+    const state = randomHex(16);
+    const nonce = randomHex(16);
+    const oidcParams = new URLSearchParams({
+      client_id: "smartdashboard",
+      redirect_uri: redirectUri,
+      response_type: "code",
+      state,
+      nonce,
+      scope: "openid",
+    });
+    const oidcUrl = `${idpBaseUrl}/realms/${encodeURIComponent(realm)}/protocol/openid-connect/auth?${oidcParams.toString()}`;
+
+    this.trace.push({
+      step: "oidc-config",
+      idpBaseUrl,
+      realm,
+      url: oidcUrl,
+    });
+
     const appUrl = `${this.baseUrl}/dashboard/${this.tenant}/app-builder`;
-    const initial = await fetchWithJar(appUrl, { method: "GET" }, this.jar);
+    const initial = await fetchWithJar(oidcUrl, { method: "GET" }, this.jar);
     const initialIsLogin = looksLikeLoginPage(initial.text);
     this.trace.push({
       step: "initial-get",
+      requestedUrl: oidcUrl,
       url: initial.finalUrl,
       status: initial.response.status,
       isLoginPage: initialIsLogin,
       bodyPreview: extractBodyPreview(initial.text),
-      formBlock: extractFormBlock(initial.text),
+      errorMessage: extractKcError(initial.text),
     });
 
     if (!initialIsLogin) {
