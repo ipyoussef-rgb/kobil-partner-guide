@@ -9,6 +9,8 @@ type TokenBody = {
   clientSecret?: string;
   scope?: string;
   grantType?: string;
+  username?: string;
+  password?: string;
 };
 
 export async function POST(req: NextRequest) {
@@ -57,6 +59,27 @@ export async function POST(req: NextRequest) {
   form.set("client_id", clientId);
   form.set("client_secret", clientSecret);
   if (scope) form.set("scope", scope);
+
+  if (grantType === "password") {
+    const username = (body.username || "").trim();
+    const password = body.password || "";
+    if (!username) {
+      trace.push("validate-fail", { note: "username required for password grant" });
+      return NextResponse.json(
+        { error: "username is required for grant_type=password", trace: trace.toArray() },
+        { status: 400 },
+      );
+    }
+    if (!password) {
+      trace.push("validate-fail", { note: "password required for password grant" });
+      return NextResponse.json(
+        { error: "password is required for grant_type=password", trace: trace.toArray() },
+        { status: 400 },
+      );
+    }
+    form.set("username", username);
+    form.set("password", password);
+  }
 
   trace.push("token-request", {
     url: parsed.toString(),

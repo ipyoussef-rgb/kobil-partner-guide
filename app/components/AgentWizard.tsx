@@ -714,10 +714,25 @@ function CategoryFlow({
       <Bot>
         <p className="font-medium">Step A — Get an access token.</p>
         <p className="mt-1 text-zinc-600">
-          Service-account flow (<code>client_credentials</code>). I&rsquo;ve pre-filled everything from
-          your service.
+          {category === "identity" ? (
+            <>
+              Service-account flow (<code>client_credentials</code>) by default. Switch to{" "}
+              <code>password</code> if you need a user token.
+            </>
+          ) : (
+            <>
+              KOBIL {info.label} requires a <strong>user token</strong> — the call must run on
+              behalf of a real person. Enter your KOBIL userID + password below; the{" "}
+              <code>password</code> grant exchanges them for a user-scoped access token.
+            </>
+          )}
         </p>
-        <TokenForm service={service} onToken={onToken} accessToken={accessToken} />
+        <TokenForm
+          service={service}
+          onToken={onToken}
+          accessToken={accessToken}
+          defaultGrant={category === "identity" ? "client_credentials" : "password"}
+        />
       </Bot>
 
       {accessToken ? (
@@ -759,19 +774,26 @@ function CategoryFlow({
 
 // ---------- Token form ----------
 
+type GrantType = "client_credentials" | "password";
+
 function TokenForm({
   service,
   accessToken,
   onToken,
+  defaultGrant = "client_credentials",
 }: {
   service: Service;
   accessToken: string;
   onToken: (t: string) => void;
+  defaultGrant?: GrantType;
 }) {
   const debug = useDebug();
+  const [grant, setGrant] = useState<GrantType>(defaultGrant);
   const [tokenUrl, setTokenUrl] = useState(service.tokenEndpoint || "");
   const [clientId, setClientId] = useState(service.clientId);
   const [clientSecret, setClientSecret] = useState(service.clientSecret);
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
   const [scope, setScope] = useState("openid");
   const [loading, setLoading] = useState(false);
   const [resp, setResp] = useState<{ status: number; body: unknown; error?: string } | null>(null);
@@ -781,6 +803,10 @@ function TokenForm({
     setClientId(service.clientId);
     setClientSecret(service.clientSecret);
   }, [service]);
+
+  useEffect(() => {
+    setGrant(defaultGrant);
+  }, [defaultGrant]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -795,7 +821,8 @@ function TokenForm({
           clientId,
           clientSecret,
           scope,
-          grantType: "client_credentials",
+          grantType: grant,
+          ...(grant === "password" ? { username, password } : {}),
         }),
       })) as { status: number; body: unknown };
       setResp(data);
@@ -813,11 +840,49 @@ function TokenForm({
 
   return (
     <form onSubmit={submit} className="mt-3 space-y-3 rounded-lg border border-zinc-200 bg-zinc-50 p-3">
+      <div>
+        <p className="mb-1 text-xs font-medium text-zinc-800">Grant type</p>
+        <div className="inline-flex rounded-md border border-zinc-300 bg-white p-1 text-xs">
+          {(["client_credentials", "password"] as const).map((g) => (
+            <button
+              key={g}
+              type="button"
+              onClick={() => setGrant(g)}
+              className={`rounded px-3 py-1 font-medium transition ${
+                g === grant
+                  ? "bg-zinc-900 text-white"
+                  : "text-zinc-700 hover:bg-zinc-100"
+              }`}
+            >
+              {g === "client_credentials" ? "Service (client_credentials)" : "User (password)"}
+            </button>
+          ))}
+        </div>
+        <p className="mt-1 text-[11px] text-zinc-500">
+          {grant === "client_credentials"
+            ? "Service-account token. Use for admin / machine-to-machine endpoints (e.g. Identity userinfo on a service)."
+            : "User-scoped token. Required for Chat / Pay / Sign / TMS — KOBIL APIs that operate on behalf of a real person."}
+        </p>
+      </div>
+
       <Field label="Token endpoint" required value={tokenUrl} onChange={setTokenUrl} />
       <div className="grid gap-3 sm:grid-cols-2">
         <Field label="Client ID" required value={clientId} onChange={setClientId} />
         <Field label="Client secret" required type="password" value={clientSecret} onChange={setClientSecret} />
       </div>
+      {grant === "password" ? (
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field
+            label="User ID (email)"
+            required
+            value={username}
+            onChange={setUsername}
+            placeholder="alice@example.com"
+            hint="Your KOBIL user account on this tenant — the person the token represents."
+          />
+          <Field label="Password" required type="password" value={password} onChange={setPassword} />
+        </div>
+      ) : null}
       <Field label="Scopes" value={scope} onChange={setScope} hint="Space-separated. openid is a sensible default." />
       <button
         type="submit"
