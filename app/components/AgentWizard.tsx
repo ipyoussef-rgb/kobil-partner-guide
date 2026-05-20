@@ -9,6 +9,11 @@ import {
   type Endpoint,
   type Param,
 } from "../../lib/endpoints";
+import {
+  DEFAULT_ENV_HOST,
+  DEFAULT_SMARTDASHBOARD_BASE_URL,
+  defaultWellKnownUrl,
+} from "../../lib/env";
 
 const STATE_KEY = "kobil-agent-v1";
 
@@ -447,7 +452,7 @@ function UserMessage({ children }: { children: React.ReactNode }) {
 
 function ServiceForm({ onSuccess }: { onSuccess: (s: Service) => void }) {
   const debug = useDebug();
-  const [baseUrl, setBase] = useState("");
+  const [baseUrl, setBase] = useState(DEFAULT_SMARTDASHBOARD_BASE_URL);
   const [tenant, setTenant] = useState("");
   const [wellKnownUrl, setWellKnownUrl] = useState("");
   const [name, setName] = useState("");
@@ -456,6 +461,7 @@ function ServiceForm({ onSuccess }: { onSuccess: (s: Service) => void }) {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [trace, setTrace] = useState<unknown>(null);
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
   // Auto-derive well-known URL when base/tenant change and the user hasn't typed one
   const [wellKnownTouched, setWellKnownTouched] = useState(false);
@@ -544,14 +550,59 @@ function ServiceForm({ onSuccess }: { onSuccess: (s: Service) => void }) {
 
   return (
     <form onSubmit={submit} className="mt-4 space-y-4">
-      <Field label="SmartDashboard Base URL" required value={baseUrl} onChange={setBase} placeholder="https://smartdashboard.example.kobil.com" />
-      <Field label="IDP well-known configuration URL" required value={wellKnownUrl} onChange={(v) => { setWellKnownUrl(v); setWellKnownTouched(true); }} placeholder="https://idp.example.kobil.com/auth/realms/your-tenant/.well-known/openid-configuration" hint="Auto-filled from base URL and tenant — override if your IDP is hosted elsewhere." />
-      <Field label="Tenant" required value={tenant} onChange={setTenant} placeholder="your-tenant" />
+      <Field label="Tenant" required value={tenant} onChange={setTenant} placeholder="wormsdev" hint="Your Keycloak realm / KOBIL tenant slug." />
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label="Service name" required value={name} onChange={setName} placeholder="Acme MiniApp" />
         <Field label="Callback URL" required value={callbackUrl} onChange={setCallbackUrl} placeholder="https://acme.example.com" />
       </div>
       <Field label="Description (optional)" value={description} onChange={setDescription} placeholder="Short description" />
+
+      <div className="rounded-md border border-zinc-200 bg-zinc-50 p-3">
+        <button
+          type="button"
+          onClick={() => setShowAdvanced((s) => !s)}
+          className="flex w-full items-center justify-between text-left text-xs font-medium text-zinc-700 hover:text-zinc-900"
+        >
+          <span>
+            Environment URLs (auto-filled from <code>{DEFAULT_ENV_HOST}</code>)
+          </span>
+          <span className="text-zinc-400">{showAdvanced ? "▼" : "▶"}</span>
+        </button>
+        {showAdvanced ? (
+          <div className="mt-3 space-y-3">
+            <Field
+              label="SmartDashboard Base URL"
+              required
+              value={baseUrl}
+              onChange={setBase}
+              hint="Override only if you're targeting a different KOBIL cluster."
+            />
+            <Field
+              label="IDP well-known configuration URL"
+              required
+              value={wellKnownUrl}
+              onChange={(v) => {
+                setWellKnownUrl(v);
+                setWellKnownTouched(true);
+              }}
+              hint="Auto-filled from base URL + tenant."
+            />
+          </div>
+        ) : (
+          <div className="mt-2 space-y-1 text-[11px] text-zinc-600">
+            <p>
+              <span className="text-zinc-400">SmartDashboard</span>{" "}
+              <code className="break-all">{baseUrl}</code>
+            </p>
+            <p>
+              <span className="text-zinc-400">Well-known</span>{" "}
+              <code className="break-all">
+                {wellKnownUrl || defaultWellKnownUrl(tenant || "{tenant}")}
+              </code>
+            </p>
+          </div>
+        )}
+      </div>
 
       {error ? (
         <div className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
@@ -870,7 +921,19 @@ function TokenForm({
 
   return (
     <form onSubmit={submit} className="mt-3 space-y-3 rounded-lg border border-zinc-200 bg-zinc-50 p-3">
-      <Field label="Token endpoint" required value={tokenUrl} onChange={setTokenUrl} />
+      <details className="rounded-md border border-zinc-200 bg-white p-2 text-xs">
+        <summary className="cursor-pointer font-medium text-zinc-700">
+          Token endpoint <code className="break-all text-zinc-500">{tokenUrl}</code>
+        </summary>
+        <div className="mt-2">
+          <Field
+            label="Override"
+            value={tokenUrl}
+            onChange={setTokenUrl}
+            hint="Auto-filled from the well-known config fetched in step 1."
+          />
+        </div>
+      </details>
       <div className="grid gap-3 sm:grid-cols-2">
         <Field label="Client ID" required value={clientId} onChange={setClientId} />
         <Field label="Client secret" required type="password" value={clientSecret} onChange={setClientSecret} />
@@ -1153,13 +1216,20 @@ function EndpointForm({
       <form onSubmit={submit} className="space-y-3 p-3">
         <p className="text-xs text-zinc-600">{endpoint.summary}</p>
 
-        <Field
-          label={baseLabel}
-          required
-          value={base}
-          onChange={setBase}
-          hint={`Derived: smartdashboard.{env} → ${endpoint.host}.{env}.`}
-        />
+        <details className="rounded-md border border-zinc-200 bg-zinc-50 p-2 text-xs">
+          <summary className="cursor-pointer font-medium text-zinc-700">
+            {baseLabel}{" "}
+            <code className="break-all text-zinc-500">{base}</code>
+          </summary>
+          <div className="mt-2">
+            <Field
+              label="Override"
+              value={base}
+              onChange={setBase}
+              hint={`Auto-derived: smartdashboard.{env} → ${endpoint.host}.{env}. Override only if your cluster differs.`}
+            />
+          </div>
+        </details>
 
         {endpoint.note ? (
           <p className="rounded bg-amber-50 px-2 py-1.5 text-[11px] text-amber-900">
