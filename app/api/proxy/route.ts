@@ -3,11 +3,16 @@ import { Trace } from "../../../lib/trace";
 
 export const dynamic = "force-dynamic";
 
+type MultipartPart =
+  | { kind: "text"; name: string; value: string }
+  | { kind: "file"; name: string; filename: string; contentType?: string; base64: string };
+
 type ProxyBody = {
   url?: string;
   method?: string;
   headers?: Record<string, string>;
   body?: string | null;
+  multipart?: MultipartPart[];
 };
 
 const ALLOWED_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"];
@@ -58,16 +63,39 @@ export async function POST(req: NextRequest) {
 
   const init: RequestInit = { method, headers, cache: "no-store" };
   let bodyLen = 0;
-  if (method !== "GET" && method !== "DELETE" && body.body) {
-    init.body = body.body;
-    bodyLen = body.body.length;
-    if (!headers.has("Content-Type")) headers.set("Content-Type", "application/json");
+  let multipartParts = 0;
+  if (method !== "GET" && method !== "DELETE") {
+    if (body.multipart && body.multipart.length > 0) {
+      const form = new FormData();
+      for (const p of body.multipart) {
+        if (p.kind === "text") {
+          form.append(p.name, p.value);
+        } else if (p.kind === "file") {
+          try {
+            const bytes = Uint8Array.from(atob(p.base64), (c) => c.charCodeAt(0));
+            const blob = new Blob([bytes], { type: p.contentType || "application/octet-stream" });
+            form.append(p.name, blob, p.filename);
+            bodyLen += bytes.length;
+          } catch {
+            trace.push("multipart-decode-fail", { note: `part=${p.name} filename=${p.filename}` });
+          }
+        }
+        multipartParts++;
+      }
+      init.body = form;
+      // Let fetch set the multipart Content-Type with the right boundary.
+      headers.delete("Content-Type");
+    } else if (body.body) {
+      init.body = body.body;
+      bodyLen = body.body.length;
+      if (!headers.has("Content-Type")) headers.set("Content-Type", "application/json");
+    }
   }
 
   trace.push("upstream-request", {
     url: parsed.toString(),
     method,
-    note: `headers=[${headerNames.join(", ")}] auth=${hasAuth ? "yes" : "no"} bodyLen=${bodyLen}`,
+    note: `headers=[${headerNames.join(", ")}] auth=${hasAuth ? "yes" : "no"} bodyLen=${bodyLen}${multipartParts ? ` multipartParts=${multipartParts}` : ""}`,
   });
 
   try {

@@ -714,51 +714,30 @@ function CategoryFlow({
       <Bot>
         <p className="font-medium">Step A — Get an access token.</p>
         <p className="mt-1 text-zinc-600">
-          {category === "identity" ? (
-            <>
-              Service-account flow (<code>client_credentials</code>) by default. Switch to{" "}
-              <code>password</code> if you need a user token.
-            </>
-          ) : (
-            <>
-              KOBIL {info.label} requires a <strong>user token</strong> — the call must run on
-              behalf of a real person. Enter your KOBIL userID + password below; the{" "}
-              <code>password</code> grant exchanges them for a user-scoped access token.
-            </>
-          )}
+          Service-account flow (<code>client_credentials</code>). Token is auto-used as{" "}
+          <code>Authorization: Bearer …</code> on every subsequent call.
         </p>
-        <TokenForm
-          service={service}
-          onToken={onToken}
-          accessToken={accessToken}
-          defaultGrant={category === "identity" ? "client_credentials" : "password"}
-        />
+        <TokenForm service={service} onToken={onToken} accessToken={accessToken} />
       </Bot>
 
       {accessToken ? (
         <Bot>
           <p className="font-medium">Step B — Call the {info.label} API.</p>
-          <div className="mt-2 flex flex-wrap gap-2">
+          <p className="mt-1 text-zinc-600">
+            {info.endpoints.length} operations available. Click a row to expand.
+          </p>
+          <div className="mt-3 space-y-1.5">
             {info.endpoints.map((ep, i) => (
-              <button
+              <EndpointRow
                 key={ep.id}
-                type="button"
-                onClick={() => onEndpointChange(i)}
-                className={`rounded-full border px-3 py-1 text-xs font-medium ${
-                  i === endpointIdx
-                    ? "border-zinc-900 bg-zinc-900 text-white"
-                    : "border-zinc-300 text-zinc-700 hover:border-zinc-900"
-                }`}
-              >
-                {ep.method} {ep.name}
-              </button>
+                endpoint={ep}
+                expanded={i === endpointIdx}
+                onToggle={() => onEndpointChange(i === endpointIdx ? -1 : i)}
+                service={service}
+                accessToken={accessToken}
+              />
             ))}
           </div>
-          <EndpointForm
-            endpoint={info.endpoints[endpointIdx]}
-            service={service}
-            accessToken={accessToken}
-          />
           <button
             type="button"
             onClick={onPickAnother}
@@ -772,28 +751,84 @@ function CategoryFlow({
   );
 }
 
-// ---------- Token form ----------
+// ---------- Swagger-style endpoint row ----------
 
-type GrantType = "client_credentials" | "password";
+function methodColor(method: string): string {
+  switch (method) {
+    case "GET":
+      return "bg-blue-100 text-blue-900 border-blue-300";
+    case "POST":
+      return "bg-green-100 text-green-900 border-green-300";
+    case "PUT":
+      return "bg-amber-100 text-amber-900 border-amber-300";
+    case "PATCH":
+      return "bg-teal-100 text-teal-900 border-teal-300";
+    case "DELETE":
+      return "bg-red-100 text-red-900 border-red-300";
+    default:
+      return "bg-zinc-100 text-zinc-800 border-zinc-300";
+  }
+}
+
+function EndpointRow({
+  endpoint,
+  expanded,
+  onToggle,
+  service,
+  accessToken,
+}: {
+  endpoint: Endpoint;
+  expanded: boolean;
+  onToggle: () => void;
+  service: Service;
+  accessToken: string;
+}) {
+  return (
+    <div className={`overflow-hidden rounded-lg border ${expanded ? "border-zinc-400 shadow-sm" : "border-zinc-200"}`}>
+      <button
+        type="button"
+        onClick={onToggle}
+        className={`flex w-full items-center gap-3 px-3 py-2 text-left transition ${
+          expanded ? "bg-zinc-50" : "bg-white hover:bg-zinc-50"
+        }`}
+      >
+        <span
+          className={`inline-block w-16 shrink-0 rounded border px-2 py-0.5 text-center font-mono text-[11px] font-semibold ${methodColor(endpoint.method)}`}
+        >
+          {endpoint.method}
+        </span>
+        <span className="font-mono text-xs text-zinc-800 break-all">
+          {endpoint.pathTemplate}
+        </span>
+        <span className="ml-auto hidden truncate text-xs text-zinc-500 sm:block">
+          {endpoint.name}
+        </span>
+        <span className="text-zinc-400">{expanded ? "▼" : "▶"}</span>
+      </button>
+      {expanded ? (
+        <div className="border-t border-zinc-200 bg-white">
+          <EndpointForm endpoint={endpoint} service={service} accessToken={accessToken} />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+// ---------- Token form ----------
 
 function TokenForm({
   service,
   accessToken,
   onToken,
-  defaultGrant = "client_credentials",
 }: {
   service: Service;
   accessToken: string;
   onToken: (t: string) => void;
-  defaultGrant?: GrantType;
 }) {
   const debug = useDebug();
-  const [grant, setGrant] = useState<GrantType>(defaultGrant);
   const [tokenUrl, setTokenUrl] = useState(service.tokenEndpoint || "");
   const [clientId, setClientId] = useState(service.clientId);
   const [clientSecret, setClientSecret] = useState(service.clientSecret);
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
   const [scope, setScope] = useState("openid");
   const [loading, setLoading] = useState(false);
   const [resp, setResp] = useState<{ status: number; body: unknown; error?: string } | null>(null);
@@ -803,10 +838,6 @@ function TokenForm({
     setClientId(service.clientId);
     setClientSecret(service.clientSecret);
   }, [service]);
-
-  useEffect(() => {
-    setGrant(defaultGrant);
-  }, [defaultGrant]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -821,8 +852,7 @@ function TokenForm({
           clientId,
           clientSecret,
           scope,
-          grantType: grant,
-          ...(grant === "password" ? { username, password } : {}),
+          grantType: "client_credentials",
         }),
       })) as { status: number; body: unknown };
       setResp(data);
@@ -840,49 +870,11 @@ function TokenForm({
 
   return (
     <form onSubmit={submit} className="mt-3 space-y-3 rounded-lg border border-zinc-200 bg-zinc-50 p-3">
-      <div>
-        <p className="mb-1 text-xs font-medium text-zinc-800">Grant type</p>
-        <div className="inline-flex rounded-md border border-zinc-300 bg-white p-1 text-xs">
-          {(["client_credentials", "password"] as const).map((g) => (
-            <button
-              key={g}
-              type="button"
-              onClick={() => setGrant(g)}
-              className={`rounded px-3 py-1 font-medium transition ${
-                g === grant
-                  ? "bg-zinc-900 text-white"
-                  : "text-zinc-700 hover:bg-zinc-100"
-              }`}
-            >
-              {g === "client_credentials" ? "Service (client_credentials)" : "User (password)"}
-            </button>
-          ))}
-        </div>
-        <p className="mt-1 text-[11px] text-zinc-500">
-          {grant === "client_credentials"
-            ? "Service-account token. Use for admin / machine-to-machine endpoints (e.g. Identity userinfo on a service)."
-            : "User-scoped token. Required for Chat / Pay / Sign / TMS — KOBIL APIs that operate on behalf of a real person."}
-        </p>
-      </div>
-
       <Field label="Token endpoint" required value={tokenUrl} onChange={setTokenUrl} />
       <div className="grid gap-3 sm:grid-cols-2">
         <Field label="Client ID" required value={clientId} onChange={setClientId} />
         <Field label="Client secret" required type="password" value={clientSecret} onChange={setClientSecret} />
       </div>
-      {grant === "password" ? (
-        <div className="grid gap-3 sm:grid-cols-2">
-          <Field
-            label="User ID (email)"
-            required
-            value={username}
-            onChange={setUsername}
-            placeholder="alice@example.com"
-            hint="Your KOBIL user account on this tenant — the person the token represents."
-          />
-          <Field label="Password" required type="password" value={password} onChange={setPassword} />
-        </div>
-      ) : null}
       <Field label="Scopes" value={scope} onChange={setScope} hint="Space-separated. openid is a sensible default." />
       <button
         type="submit"
@@ -960,6 +952,7 @@ function EndpointForm({
   const [paramValues, setParamValues] = useState<Record<string, string>>({});
   const [bodyText, setBodyText] = useState<string>("");
   const [formFields, setFormFields] = useState<{ key: string; value: string }[]>([]);
+  const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   const [resp, setResp] = useState<{ status: number; statusText?: string; body: unknown; error?: string } | null>(null);
 
@@ -1006,6 +999,7 @@ function EndpointForm({
       setFormFields([]);
     }
 
+    setFile(null);
     setResp(null);
   }, [endpoint, service, subsVars]);
 
@@ -1048,6 +1042,14 @@ function EndpointForm({
 
   const preview = useMemo(buildRequest, [paramValues, base, endpoint, bodyText, formFields, subsVars]);
 
+  async function fileToBase64(f: File): Promise<string> {
+    const buf = await f.arrayBuffer();
+    const bytes = new Uint8Array(buf);
+    let bin = "";
+    for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+    return btoa(bin);
+  }
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
@@ -1061,15 +1063,39 @@ function EndpointForm({
       }
       if (!headers.Accept) headers.Accept = "application/json";
 
-      const data = (await tracedFetch(debug, "/api/proxy", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      let proxyBody: Record<string, unknown> = {
+        url: preview.url,
+        method: endpoint.method,
+        headers,
+        body: preview.body,
+      };
+
+      // Multipart: encode the file client-side and pass as base64 parts.
+      if (endpoint.bodyType === "multipart" && file) {
+        const fieldName = endpoint.fileField || "file";
+        const base64 = await fileToBase64(file);
+        // Drop Content-Type — proxy will set the multipart boundary itself.
+        delete headers["Content-Type"];
+        proxyBody = {
           url: preview.url,
           method: endpoint.method,
           headers,
-          body: preview.body,
-        }),
+          multipart: [
+            {
+              kind: "file",
+              name: fieldName,
+              filename: file.name,
+              contentType: file.type || "application/octet-stream",
+              base64,
+            },
+          ],
+        };
+      }
+
+      const data = (await tracedFetch(debug, "/api/proxy", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(proxyBody),
       })) as { status: number; statusText?: string; body: unknown; error?: string };
       setResp(data);
     } catch (err) {
@@ -1082,37 +1108,26 @@ function EndpointForm({
   const baseLabel =
     endpoint.host === "idp"
       ? "IDP base URL"
-      : endpoint.host === "pay"
-        ? "Pay base URL"
-        : "TMS base URL";
+      : endpoint.host === "mercury"
+        ? "Mercury base URL"
+        : endpoint.host === "pay"
+          ? "Pay base URL"
+          : "TMS base URL";
 
   return (
-    <div className="mt-3 rounded-lg border border-zinc-200 bg-white">
-      <div className="flex items-center gap-2 border-b border-zinc-200 bg-zinc-50 px-3 py-2 text-xs">
-        <span
-          className={`rounded px-2 py-0.5 font-mono font-semibold ${
-            endpoint.method === "GET"
-              ? "bg-blue-100 text-blue-900"
-              : endpoint.method === "POST"
-                ? "bg-green-100 text-green-900"
-                : "bg-amber-100 text-amber-900"
-          }`}
-        >
-          {endpoint.method}
-        </span>
-        <span className="break-all font-mono text-zinc-800">{endpoint.pathTemplate}</span>
-        {endpoint.docsUrl ? (
+    <div>
+      {endpoint.docsUrl ? (
+        <div className="flex items-center justify-end px-3 pt-2">
           <a
             href={endpoint.docsUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="ml-auto whitespace-nowrap text-zinc-500 underline hover:text-zinc-900"
+            className="text-[11px] text-zinc-500 underline hover:text-zinc-900"
           >
             spec ↗
           </a>
-        ) : null}
-      </div>
-
+        </div>
+      ) : null}
       <form onSubmit={submit} className="space-y-3 p-3">
         <p className="text-xs text-zinc-600">{endpoint.summary}</p>
 
@@ -1175,6 +1190,34 @@ function EndpointForm({
                 </div>
               ))}
             </div>
+          </div>
+        ) : null}
+
+        {endpoint.bodyType === "multipart" ? (
+          <div>
+            <p className="mb-1 text-xs font-medium text-zinc-800">
+              File upload{" "}
+              <span className="rounded bg-zinc-100 px-1.5 py-0.5 text-[10px] uppercase text-zinc-600">
+                multipart/form-data
+              </span>
+            </p>
+            <input
+              type="file"
+              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+              className="block w-full text-xs file:mr-3 file:rounded-full file:border-0 file:bg-zinc-900 file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-white hover:file:bg-zinc-700"
+            />
+            {file ? (
+              <p className="mt-1 text-[11px] text-zinc-600">
+                Selected: <code>{file.name}</code> ({Math.round(file.size / 1024)} KB,{" "}
+                {file.type || "unknown type"}) — uploaded as field{" "}
+                <code>{endpoint.fileField || "file"}</code>.
+              </p>
+            ) : (
+              <p className="mt-1 text-[11px] text-zinc-500">
+                Pick a file. It&rsquo;s base64-encoded client-side; the proxy rebuilds the
+                multipart/form-data body before forwarding to Mercury.
+              </p>
+            )}
           </div>
         ) : null}
 

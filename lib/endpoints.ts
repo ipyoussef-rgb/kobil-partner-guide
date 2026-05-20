@@ -20,7 +20,7 @@ export type Category = "identity" | "chat" | "pay" | "sign" | "tms";
 
 export type ParamLocation = "path" | "query" | "header" | "body";
 
-export type ProductHost = "idp" | "pay" | "tms";
+export type ProductHost = "idp" | "mercury" | "pay" | "tms";
 
 export type Param = {
   name: string;
@@ -48,6 +48,10 @@ export type Endpoint = {
   /** Content-Type override (default: application/json for JSON body, none for
    * GET, application/x-www-form-urlencoded when formData is present). */
   contentType?: string;
+  /** Request body shape. Default 'json'. 'multipart' renders a file picker. */
+  bodyType?: "json" | "form" | "multipart";
+  /** Field name for the uploaded file (multipart body). */
+  fileField?: string;
   docsUrl?: string;
   note?: string;
 };
@@ -281,7 +285,7 @@ export const CATEGORIES: CategoryInfo[] = [
     label: "Chat",
     tagline: "Send messages, choices, attachments, and signature requests to SuperApp users.",
     description:
-      "KOBIL Chat delivers messages into a user's SuperApp inbox over the IDP host. The recipient is identified by their email (chat_user_id). All write endpoints require serviceUuid (= your service's client_id).",
+      "KOBIL Chat delivers messages into a user's SuperApp inbox via the Mercury host. The recipient is identified by their email (chat_user_id). All write endpoints require serviceUuid (= your service's client_id).",
     steps: [
       "Complete the Identity integration and obtain an access token via client_credentials.",
       "POST a message to /mpower/v1/users/{user_email}/message with the desired messageType.",
@@ -294,7 +298,7 @@ export const CATEGORIES: CategoryInfo[] = [
         name: "Send plain-text message",
         summary: "Push a one-way text message to the user's chat inbox.",
         method: "POST",
-        host: "idp",
+        host: "mercury",
         pathTemplate: "/auth/realms/{tenant_name}/mpower/v1/users/{chat_user_id}/message",
         params: [
           { name: "tenant_name", in: "path", required: true, defaultFrom: "tenant" },
@@ -307,7 +311,7 @@ export const CATEGORIES: CategoryInfo[] = [
         name: "Send multi-choice prompt",
         summary: "Ask the user to pick one of several options.",
         method: "POST",
-        host: "idp",
+        host: "mercury",
         pathTemplate: "/auth/realms/{tenant_name}/mpower/v1/users/{chat_user_id}/message",
         params: [
           { name: "tenant_name", in: "path", required: true, defaultFrom: "tenant" },
@@ -320,7 +324,7 @@ export const CATEGORIES: CategoryInfo[] = [
         name: "Send SmartScreen service",
         summary: "Push a link to another MiniApp (SmartScreen service) into the chat.",
         method: "POST",
-        host: "idp",
+        host: "mercury",
         pathTemplate: "/auth/realms/{tenant_name}/mpower/v1/users/{chat_user_id}/message",
         params: [
           { name: "tenant_name", in: "path", required: true, defaultFrom: "tenant" },
@@ -331,12 +335,13 @@ export const CATEGORIES: CategoryInfo[] = [
       {
         id: "send-attachment",
         name: "Upload attachment",
-        summary: "Upload media to be sent as a chat attachment. multipart/form-data — pass a file via the request body.",
+        summary: "Upload media to be sent as a chat attachment.",
         method: "POST",
-        host: "idp",
+        host: "mercury",
         pathTemplate: "/auth/realms/{tenant_name}/mpower/v1/users/{chat_user_id}/media",
-        contentType: "multipart/form-data",
-        note: "multipart upload — this UI doesn't ship a file picker. Use the official Postman collection or a curl call for now.",
+        bodyType: "multipart",
+        fileField: "file",
+        note: "multipart/form-data upload. Pick a file below; this UI base64-encodes it client-side and the proxy rebuilds the multipart body to forward to Mercury.",
         params: [
           { name: "tenant_name", in: "path", required: true, defaultFrom: "tenant" },
           { name: "chat_user_id", in: "path", required: true, example: "alice@example.com" },
@@ -360,7 +365,7 @@ export const CATEGORIES: CategoryInfo[] = [
         name: "Initiate PDF signature",
         summary: "Ask the user to sign a PDF. Signed document is returned via your registered callback.",
         method: "POST",
-        host: "idp",
+        host: "mercury",
         pathTemplate: "/auth/realms/{tenant_name}/mpower/v1/users/{chat_user_id}/signature",
         note: "Body payload format varies by tenant. Check the official spec for the exact PDF + metadata schema.",
         params: [
@@ -470,7 +475,7 @@ export const CATEGORIES: CategoryInfo[] = [
         name: "Initiate PDF signature (via Chat)",
         summary: "Ask the user to sign a PDF; signed document is returned via your callback.",
         method: "POST",
-        host: "idp",
+        host: "mercury",
         pathTemplate: "/auth/realms/{tenant_name}/mpower/v1/users/{chat_user_id}/signature",
         params: [
           { name: "tenant_name", in: "path", required: true, defaultFrom: "tenant" },
@@ -553,8 +558,7 @@ export function findCategory(key: string | undefined): CategoryInfo | undefined 
 
 /**
  * Derive per-product host names from the SmartDashboard base URL.
- * Convention (confirmed via Postman collection + KOBIL runtime config):
- *   smartdashboard.{env}  → idp.{env} | pay.{env} | tms.{env}
+ *   smartdashboard.{env}  → idp.{env} | mercury.{env} | pay.{env} | tms.{env}
  */
 export function deriveProductBase(
   productHost: ProductHost,
