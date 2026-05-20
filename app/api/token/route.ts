@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { Trace } from "../../../lib/trace";
 
 export const dynamic = "force-dynamic";
 
@@ -10,34 +11,45 @@ type TokenBody = {
   grantType?: string;
 };
 
-function badRequest(msg: string) {
-  return NextResponse.json({ error: msg }, { status: 400 });
-}
-
 export async function POST(req: NextRequest) {
+  const trace = new Trace("api/token");
+  trace.push("received");
+
   let body: TokenBody;
   try {
     body = await req.json();
   } catch {
-    return badRequest("Invalid JSON body");
+    trace.push("bad-json");
+    return NextResponse.json({ error: "Invalid JSON body", trace: trace.toArray() }, { status: 400 });
   }
 
   const { tokenUrl, clientId, clientSecret } = body;
   const scope = body.scope?.trim() || "";
   const grantType = body.grantType?.trim() || "client_credentials";
 
-  if (!tokenUrl) return badRequest("tokenUrl is required");
-  if (!clientId) return badRequest("clientId is required");
-  if (!clientSecret) return badRequest("clientSecret is required");
+  if (!tokenUrl) {
+    trace.push("validate-fail", { note: "tokenUrl missing" });
+    return NextResponse.json({ error: "tokenUrl is required", trace: trace.toArray() }, { status: 400 });
+  }
+  if (!clientId) {
+    trace.push("validate-fail", { note: "clientId missing" });
+    return NextResponse.json({ error: "clientId is required", trace: trace.toArray() }, { status: 400 });
+  }
+  if (!clientSecret) {
+    trace.push("validate-fail", { note: "clientSecret missing" });
+    return NextResponse.json({ error: "clientSecret is required", trace: trace.toArray() }, { status: 400 });
+  }
 
   let parsed: URL;
   try {
     parsed = new URL(tokenUrl);
   } catch {
-    return badRequest("tokenUrl is not a valid URL");
+    trace.push("validate-fail", { note: "tokenUrl not a valid URL" });
+    return NextResponse.json({ error: "tokenUrl is not a valid URL", trace: trace.toArray() }, { status: 400 });
   }
   if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
-    return badRequest("tokenUrl must be http(s)");
+    trace.push("validate-fail", { note: "tokenUrl must be http(s)" });
+    return NextResponse.json({ error: "tokenUrl must be http(s)", trace: trace.toArray() }, { status: 400 });
   }
 
   const form = new URLSearchParams();
@@ -46,8 +58,14 @@ export async function POST(req: NextRequest) {
   form.set("client_secret", clientSecret);
   if (scope) form.set("scope", scope);
 
+  trace.push("token-request", {
+    url: parsed.toString(),
+    method: "POST",
+    note: `grant=${grantType} scope=${scope || "(none)"} fields=${[...form.keys()].join(",")}`,
+  });
+
   try {
-    const upstream = await fetch(parsed.toString(), {
+    const { response: upstream, durationMs } = await trace.wrapFetch("upstream-token", parsed.toString(), {
       method: "POST",
       headers: {
         "Content-Type": "application/x-www-form-urlencoded",
@@ -64,13 +82,11 @@ export async function POST(req: NextRequest) {
     } catch {
       json = { raw: text };
     }
+    trace.push("parsed-response", { status: upstream.status, durationMs });
 
-    return NextResponse.json(
-      { status: upstream.status, body: json },
-      { status: upstream.ok ? 200 : 200 },
-    );
+    return NextResponse.json({ status: upstream.status, body: json, trace: trace.toArray() }, { status: 200 });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Upstream request failed";
-    return NextResponse.json({ status: 0, error: msg }, { status: 502 });
+    return NextResponse.json({ status: 0, error: msg, trace: trace.toArray() }, { status: 502 });
   }
 }

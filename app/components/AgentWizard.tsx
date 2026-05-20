@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import {
   CATEGORIES,
   deriveProductBase,
@@ -11,6 +11,80 @@ import {
 } from "../../lib/endpoints";
 
 const STATE_KEY = "kobil-agent-v1";
+
+// ---------- Client-side debug log ----------
+
+type ClientCall = {
+  id: string;
+  ts: number;
+  endpoint: string;
+  status: number | "error";
+  durationMs: number;
+  ok: boolean;
+  error?: string;
+  trace?: unknown;
+  authTrace?: unknown;
+};
+
+type DebugCtx = {
+  calls: ClientCall[];
+  record: (c: Omit<ClientCall, "id">) => void;
+  clear: () => void;
+};
+
+const DebugContext = createContext<DebugCtx | null>(null);
+
+function useDebug() {
+  const ctx = useContext(DebugContext);
+  if (!ctx) throw new Error("DebugContext missing");
+  return ctx;
+}
+
+/**
+ * Centralised fetch wrapper. Every API call from the agent goes through here
+ * so the Debug panel can show endpoint, status, duration, and the trace the
+ * server returned.
+ */
+async function tracedFetch(
+  recorder: DebugCtx,
+  endpoint: string,
+  init: RequestInit,
+): Promise<unknown> {
+  const t0 = Date.now();
+  try {
+    const r = await fetch(endpoint, init);
+    const durationMs = Date.now() - t0;
+    let data: unknown = null;
+    try {
+      data = await r.json();
+    } catch {
+      data = null;
+    }
+    const obj = (data || {}) as Record<string, unknown>;
+    recorder.record({
+      ts: Date.now(),
+      endpoint,
+      status: r.status,
+      durationMs,
+      ok: r.ok && (obj.ok !== false),
+      error: typeof obj.error === "string" ? obj.error : undefined,
+      trace: obj.trace,
+      authTrace: obj.authTrace,
+    });
+    return data;
+  } catch (e) {
+    const durationMs = Date.now() - t0;
+    recorder.record({
+      ts: Date.now(),
+      endpoint,
+      status: "error",
+      durationMs,
+      ok: false,
+      error: e instanceof Error ? e.message : String(e),
+    });
+    throw e;
+  }
+}
 
 type Service = {
   baseUrl: string;
@@ -44,7 +118,23 @@ export default function AgentWizard() {
   const [category, setCategory] = useState<Category | null>(null);
   const [accessToken, setAccessToken] = useState<string>("");
   const [endpointIdx, setEndpointIdx] = useState<number>(0);
+  const [calls, setCalls] = useState<ClientCall[]>([]);
+  const [debugOpen, setDebugOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  const debugCtx: DebugCtx = useMemo(
+    () => ({
+      calls,
+      record: (c) => {
+        const id = (typeof crypto !== "undefined" && "randomUUID" in crypto
+          ? (crypto as Crypto & { randomUUID(): string }).randomUUID()
+          : Math.random().toString(36).slice(2)).slice(0, 8);
+        setCalls((cur) => [...cur, { ...c, id }].slice(-20));
+      },
+      clear: () => setCalls([]),
+    }),
+    [calls],
+  );
 
   // Restore state once
   useEffect(() => {
@@ -98,6 +188,7 @@ export default function AgentWizard() {
   }
 
   return (
+    <DebugContext.Provider value={debugCtx}>
     <div className="flex flex-col h-[calc(100vh-120px)] max-h-[900px]">
       <div
         ref={scrollRef}
@@ -217,6 +308,111 @@ export default function AgentWizard() {
           </div>
         </div>
       </div>
+
+      <DebugPanel
+        calls={calls}
+        open={debugOpen}
+        onToggle={() => setDebugOpen((o) => !o)}
+        onClear={() => debugCtx.clear()}
+      />
+    </div>
+    </DebugContext.Provider>
+  );
+}
+
+function DebugPanel({
+  calls,
+  open,
+  onToggle,
+  onClear,
+}: {
+  calls: ClientCall[];
+  open: boolean;
+  onToggle: () => void;
+  onClear: () => void;
+}) {
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const hasError = calls.some((c) => !c.ok);
+
+  return (
+    <div className="border-t border-zinc-200 bg-white">
+      <div className="mx-auto flex max-w-3xl items-center gap-3 px-4 py-2 text-xs">
+        <button
+          type="button"
+          onClick={onToggle}
+          className="flex items-center gap-2 font-medium text-zinc-700 hover:text-zinc-900"
+        >
+          <span className={`inline-block h-2 w-2 rounded-full ${hasError ? "bg-red-500" : "bg-green-500"}`} />
+          Debug log
+          <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] text-zinc-600">
+            {calls.length} calls
+          </span>
+          <span className="text-zinc-400">{open ? "▼" : "▲"}</span>
+        </button>
+        <span className="flex-1" />
+        {calls.length > 0 ? (
+          <button type="button" onClick={onClear} className="text-zinc-500 hover:text-zinc-800">
+            Clear
+          </button>
+        ) : null}
+      </div>
+      {open ? (
+        <div className="max-h-72 overflow-auto border-t border-zinc-100 bg-zinc-50">
+          <div className="mx-auto max-w-3xl px-4 py-3">
+            {calls.length === 0 ? (
+              <p className="text-xs text-zinc-500">No API calls yet. Trigger any step above.</p>
+            ) : (
+              <ul className="space-y-1.5">
+                {calls
+                  .slice()
+                  .reverse()
+                  .map((c) => {
+                    const isOpen = expandedId === c.id;
+                    return (
+                      <li key={c.id} className="rounded-md bg-white px-2.5 py-1.5 text-xs shadow-sm">
+                        <button
+                          type="button"
+                          onClick={() => setExpandedId(isOpen ? null : c.id)}
+                          className="flex w-full items-center gap-2 text-left"
+                        >
+                          <span
+                            className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                              c.ok
+                                ? "bg-green-100 text-green-800"
+                                : "bg-red-100 text-red-800"
+                            }`}
+                          >
+                            {c.status}
+                          </span>
+                          <span className="font-mono text-zinc-800">{c.endpoint}</span>
+                          <span className="text-zinc-400">{c.durationMs}ms</span>
+                          <span className="ml-auto text-zinc-400">{isOpen ? "−" : "+"}</span>
+                        </button>
+                        {c.error ? (
+                          <p className="mt-1 text-[11px] text-red-700">{c.error}</p>
+                        ) : null}
+                        {isOpen && (c.trace || c.authTrace) ? (
+                          <div className="mt-2 space-y-2">
+                            {c.trace ? (
+                              <pre className="max-h-72 overflow-auto rounded bg-zinc-900 p-2 text-[11px] leading-snug text-zinc-100">
+                                <code>route trace:{"\n"}{JSON.stringify(c.trace, null, 2)}</code>
+                              </pre>
+                            ) : null}
+                            {c.authTrace ? (
+                              <pre className="max-h-72 overflow-auto rounded bg-zinc-900 p-2 text-[11px] leading-snug text-zinc-100">
+                                <code>auth trace:{"\n"}{JSON.stringify(c.authTrace, null, 2)}</code>
+                              </pre>
+                            ) : null}
+                          </div>
+                        ) : null}
+                      </li>
+                    );
+                  })}
+              </ul>
+            )}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -250,6 +446,7 @@ function UserMessage({ children }: { children: React.ReactNode }) {
 // ---------- Service form ----------
 
 function ServiceForm({ onSuccess }: { onSuccess: (s: Service) => void }) {
+  const debug = useDebug();
   const [baseUrl, setBase] = useState("");
   const [tenant, setTenant] = useState("");
   const [wellKnownUrl, setWellKnownUrl] = useState("");
@@ -289,13 +486,12 @@ function ServiceForm({ onSuccess }: { onSuccess: (s: Service) => void }) {
     let userinfoEndpoint: string | undefined;
     let issuer: string | undefined;
     try {
-      const wk = await fetch("/api/idp/well-known", {
+      const wkJson = (await tracedFetch(debug, "/api/idp/well-known", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ url: wellKnownUrl }),
-      });
-      const wkJson = await wk.json();
-      if (wkJson.ok) {
+      })) as { ok?: boolean; tokenEndpoint?: string; userinfoEndpoint?: string; issuer?: string };
+      if (wkJson?.ok) {
         tokenEndpoint = wkJson.tokenEndpoint;
         userinfoEndpoint = wkJson.userinfoEndpoint;
         issuer = wkJson.issuer;
@@ -306,7 +502,7 @@ function ServiceForm({ onSuccess }: { onSuccess: (s: Service) => void }) {
 
     // 2. Create the service.
     try {
-      const r = await fetch("/api/smartdashboard/create", {
+      const data = (await tracedFetch(debug, "/api/smartdashboard/create", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -314,11 +510,18 @@ function ServiceForm({ onSuccess }: { onSuccess: (s: Service) => void }) {
           tenant,
           service: { name, description, callbackUrl },
         }),
-      });
-      const data = await r.json();
+      })) as {
+        ok?: boolean;
+        clientId?: string;
+        clientSecret?: string;
+        upstreamMessage?: string;
+        error?: string;
+        trace?: unknown;
+        authTrace?: unknown;
+      };
       if (!data.ok || !data.clientId || !data.clientSecret) {
-        setError(data.upstreamMessage || data.error || `Service creation failed (HTTP ${r.status}).`);
-        setTrace(data.trace);
+        setError(data.upstreamMessage || data.error || "Service creation failed.");
+        setTrace(data.authTrace ?? data.trace);
         return;
       }
       onSuccess({
@@ -565,6 +768,7 @@ function TokenForm({
   accessToken: string;
   onToken: (t: string) => void;
 }) {
+  const debug = useDebug();
   const [tokenUrl, setTokenUrl] = useState(service.tokenEndpoint || "");
   const [clientId, setClientId] = useState(service.clientId);
   const [clientSecret, setClientSecret] = useState(service.clientSecret);
@@ -583,7 +787,7 @@ function TokenForm({
     setLoading(true);
     setResp(null);
     try {
-      const r = await fetch("/api/token", {
+      const data = (await tracedFetch(debug, "/api/token", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -593,10 +797,12 @@ function TokenForm({
           scope,
           grantType: "client_credentials",
         }),
-      });
-      const data = await r.json();
+      })) as { status: number; body: unknown };
       setResp(data);
-      const t = data?.body && typeof data.body === "object" ? (data.body as Record<string, unknown>).access_token : null;
+      const t =
+        data?.body && typeof data.body === "object"
+          ? (data.body as Record<string, unknown>).access_token
+          : null;
       if (typeof t === "string" && t.length > 0) onToken(t);
     } catch (err) {
       setResp({ status: 0, body: null, error: err instanceof Error ? err.message : "Request failed" });
@@ -684,6 +890,7 @@ function EndpointForm({
   service: Service;
   accessToken: string;
 }) {
+  const debug = useDebug();
   const [base, setBase] = useState("");
   const [paramValues, setParamValues] = useState<Record<string, string>>({});
   const [bodyText, setBodyText] = useState<string>("");
@@ -789,7 +996,7 @@ function EndpointForm({
       }
       if (!headers.Accept) headers.Accept = "application/json";
 
-      const r = await fetch("/api/proxy", {
+      const data = (await tracedFetch(debug, "/api/proxy", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -798,8 +1005,7 @@ function EndpointForm({
           headers,
           body: preview.body,
         }),
-      });
-      const data = await r.json();
+      })) as { status: number; statusText?: string; body: unknown; error?: string };
       setResp(data);
     } catch (err) {
       setResp({ status: 0, body: null, error: err instanceof Error ? err.message : "Request failed" });
