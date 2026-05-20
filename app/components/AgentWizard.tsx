@@ -952,7 +952,8 @@ function EndpointForm({
   const [paramValues, setParamValues] = useState<Record<string, string>>({});
   const [bodyText, setBodyText] = useState<string>("");
   const [formFields, setFormFields] = useState<{ key: string; value: string }[]>([]);
-  const [file, setFile] = useState<File | null>(null);
+  const [multipartFiles, setMultipartFiles] = useState<Record<string, File>>({});
+  const [multipartTexts, setMultipartTexts] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
   const [resp, setResp] = useState<{ status: number; statusText?: string; body: unknown; error?: string } | null>(null);
 
@@ -999,7 +1000,20 @@ function EndpointForm({
       setFormFields([]);
     }
 
-    setFile(null);
+    if (endpoint.bodyType === "multipart" && endpoint.multipartParts) {
+      const texts: Record<string, string> = {};
+      for (const p of endpoint.multipartParts) {
+        if (p.kind === "text") {
+          texts[p.name] = substitute(p.defaultJson, subsVars);
+        }
+      }
+      setMultipartTexts(texts);
+      setMultipartFiles({});
+    } else {
+      setMultipartTexts({});
+      setMultipartFiles({});
+    }
+
     setResp(null);
   }, [endpoint, service, subsVars]);
 
@@ -1070,25 +1084,33 @@ function EndpointForm({
         body: preview.body,
       };
 
-      // Multipart: encode the file client-side and pass as base64 parts.
-      if (endpoint.bodyType === "multipart" && file) {
-        const fieldName = endpoint.fileField || "file";
-        const base64 = await fileToBase64(file);
-        // Drop Content-Type — proxy will set the multipart boundary itself.
+      // Multipart: build the parts array from file pickers + text inputs.
+      if (endpoint.bodyType === "multipart" && endpoint.multipartParts) {
         delete headers["Content-Type"];
+        const parts: unknown[] = [];
+        for (const spec of endpoint.multipartParts) {
+          if (spec.kind === "file") {
+            const f = multipartFiles[spec.name];
+            if (!f) continue;
+            const base64 = await fileToBase64(f);
+            parts.push({
+              kind: "file",
+              name: spec.name,
+              filename: f.name,
+              contentType: f.type || "application/octet-stream",
+              base64,
+            });
+          } else if (spec.kind === "text") {
+            const raw = multipartTexts[spec.name] ?? "";
+            const substituted = substitute(raw, subsVars);
+            parts.push({ kind: "text", name: spec.name, value: substituted });
+          }
+        }
         proxyBody = {
           url: preview.url,
           method: endpoint.method,
           headers,
-          multipart: [
-            {
-              kind: "file",
-              name: fieldName,
-              filename: file.name,
-              contentType: file.type || "application/octet-stream",
-              base64,
-            },
-          ],
+          multipart: parts,
         };
       }
 
@@ -1193,30 +1215,69 @@ function EndpointForm({
           </div>
         ) : null}
 
-        {endpoint.bodyType === "multipart" ? (
-          <div>
-            <p className="mb-1 text-xs font-medium text-zinc-800">
-              File upload{" "}
+        {endpoint.bodyType === "multipart" && endpoint.multipartParts ? (
+          <div className="space-y-3">
+            <p className="text-xs font-medium text-zinc-800">
+              Form parts{" "}
               <span className="rounded bg-zinc-100 px-1.5 py-0.5 text-[10px] uppercase text-zinc-600">
                 multipart/form-data
               </span>
             </p>
-            <input
-              type="file"
-              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-              className="block w-full text-xs file:mr-3 file:rounded-full file:border-0 file:bg-zinc-900 file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-white hover:file:bg-zinc-700"
-            />
-            {file ? (
-              <p className="mt-1 text-[11px] text-zinc-600">
-                Selected: <code>{file.name}</code> ({Math.round(file.size / 1024)} KB,{" "}
-                {file.type || "unknown type"}) — uploaded as field{" "}
-                <code>{endpoint.fileField || "file"}</code>.
-              </p>
-            ) : (
-              <p className="mt-1 text-[11px] text-zinc-500">
-                Pick a file. It&rsquo;s base64-encoded client-side; the proxy rebuilds the
-                multipart/form-data body before forwarding to Mercury.
-              </p>
+            {endpoint.multipartParts.map((part) =>
+              part.kind === "file" ? (
+                <div key={part.name}>
+                  <label className="block text-xs font-medium text-zinc-800">
+                    <span className="font-mono">{part.name}</span>
+                    <span className="ml-2 rounded bg-zinc-100 px-1.5 py-0.5 text-[10px] uppercase text-zinc-600">
+                      file
+                    </span>
+                  </label>
+                  <input
+                    type="file"
+                    accept={part.accept}
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      setMultipartFiles((cur) => {
+                        const next = { ...cur };
+                        if (f) next[part.name] = f;
+                        else delete next[part.name];
+                        return next;
+                      });
+                    }}
+                    className="mt-1 block w-full text-xs file:mr-3 file:rounded-full file:border-0 file:bg-zinc-900 file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-white hover:file:bg-zinc-700"
+                  />
+                  {multipartFiles[part.name] ? (
+                    <p className="mt-1 text-[11px] text-zinc-600">
+                      <code>{multipartFiles[part.name].name}</code> ({Math.round(multipartFiles[part.name].size / 1024)} KB)
+                    </p>
+                  ) : part.description ? (
+                    <p className="mt-1 text-[11px] text-zinc-500">{part.description}</p>
+                  ) : null}
+                </div>
+              ) : (
+                <div key={part.name}>
+                  <label className="block text-xs font-medium text-zinc-800">
+                    <span className="font-mono">{part.name}</span>
+                    <span className="ml-2 rounded bg-zinc-100 px-1.5 py-0.5 text-[10px] uppercase text-zinc-600">
+                      JSON text
+                    </span>
+                  </label>
+                  {part.description ? (
+                    <p className="mt-0.5 text-[11px] text-zinc-500">{part.description}</p>
+                  ) : null}
+                  <textarea
+                    value={multipartTexts[part.name] ?? ""}
+                    onChange={(e) =>
+                      setMultipartTexts((cur) => ({ ...cur, [part.name]: e.target.value }))
+                    }
+                    rows={Math.min(
+                      18,
+                      Math.max(4, (multipartTexts[part.name] ?? "").split("\n").length),
+                    )}
+                    className="mt-1 w-full rounded-md border border-zinc-300 bg-zinc-50 px-2 py-1.5 font-mono text-[11px] leading-snug focus:border-zinc-900 focus:outline-none"
+                  />
+                </div>
+              ),
             )}
           </div>
         ) : null}

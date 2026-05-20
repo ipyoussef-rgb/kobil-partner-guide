@@ -32,6 +32,10 @@ export type Param = {
   example?: string;
 };
 
+export type MultipartPartSpec =
+  | { kind: "file"; name: string; description?: string; accept?: string }
+  | { kind: "text"; name: string; description?: string; defaultJson: string };
+
 export type Endpoint = {
   id: string;
   name: string;
@@ -48,10 +52,10 @@ export type Endpoint = {
   /** Content-Type override (default: application/json for JSON body, none for
    * GET, application/x-www-form-urlencoded when formData is present). */
   contentType?: string;
-  /** Request body shape. Default 'json'. 'multipart' renders a file picker. */
+  /** Request body shape. Default 'json'. 'multipart' renders per-part inputs. */
   bodyType?: "json" | "form" | "multipart";
-  /** Field name for the uploaded file (multipart body). */
-  fileField?: string;
+  /** When bodyType is 'multipart', the parts that make up the form. */
+  multipartParts?: MultipartPartSpec[];
   docsUrl?: string;
   note?: string;
 };
@@ -68,7 +72,7 @@ export type CategoryInfo = {
 const PAY_REGULAR_BODY = `{
   "version": 1,
   "idempotencyId": "{{$randomUUID}}",
-  "userId": "{{pay_user_id}}",
+  "userId": "00000000-0000-0000-0000-000000000000",
   "merchantId": "{{client_id}}",
   "merchantServiceUUID": "{{client_id}}",
   "merchantName": "Hotels",
@@ -87,7 +91,7 @@ const PAY_REGULAR_BODY = `{
 const PAY_PREAUTH_BODY = `{
   "version": 1,
   "idempotencyId": "{{$randomUUID}}",
-  "userId": "{{pay_user_id}}",
+  "userId": "00000000-0000-0000-0000-000000000000",
   "merchantId": "{{client_id}}",
   "merchantServiceUUID": "{{client_id}}",
   "merchantName": "Hotels",
@@ -112,7 +116,7 @@ const PAY_STATUS_BODY = `{
 
 const PAY_VOID_BODY = `{
   "version": 1,
-  "userId": "{{pay_user_id}}",
+  "userId": "00000000-0000-0000-0000-000000000000",
   "idempotencyId": "{{$randomUUID}}",
   "merchantServiceUUID": "{{client_id}}",
   "merchantCallback": "https://webhookaddress.com",
@@ -124,7 +128,7 @@ const PAY_VOID_BODY = `{
 
 const PAY_REFUND_BODY = `{
   "version": 1,
-  "userId": "{{pay_user_id}}",
+  "userId": "00000000-0000-0000-0000-000000000000",
   "idempotencyId": "{{$randomUUID}}",
   "merchantServiceUUID": "{{client_id}}",
   "merchantCallback": "PAYMENT CALLBACK URL",
@@ -335,16 +339,31 @@ export const CATEGORIES: CategoryInfo[] = [
       {
         id: "send-attachment",
         name: "Upload attachment",
-        summary: "Upload media to be sent as a chat attachment.",
+        summary: "Send a media attachment to the user's chat inbox.",
         method: "POST",
         host: "mercury",
         pathTemplate: "/auth/realms/{tenant_name}/mpower/v1/users/{chat_user_id}/media",
         bodyType: "multipart",
-        fileField: "file",
-        note: "multipart/form-data upload. Pick a file below; this UI base64-encodes it client-side and the proxy rebuilds the multipart body to forward to Mercury.",
+        note: "multipart/form-data with two parts: attachment (the file) + message (JSON metadata for the chat message wrapping it).",
         params: [
           { name: "tenant_name", in: "path", required: true, defaultFrom: "tenant" },
           { name: "chat_user_id", in: "path", required: true, example: "alice@example.com" },
+        ],
+        multipartParts: [
+          { kind: "file", name: "attachment", description: "Media file to upload." },
+          {
+            kind: "text",
+            name: "message",
+            description: "JSON metadata for the chat message that wraps the attachment.",
+            defaultJson: `{
+  "serviceUuid": "{{client_id}}",
+  "messageType": "processChatMessage",
+  "version": 3,
+  "messageContent": {
+    "messageText": "Here is the attachment you requested."
+  }
+}`,
+          },
         ],
       },
       {
@@ -363,18 +382,34 @@ export const CATEGORIES: CategoryInfo[] = [
       {
         id: "initiate-pdf-signature",
         name: "Initiate PDF signature",
-        summary: "Ask the user to sign a PDF. Signed document is returned via your registered callback.",
+        summary: "Ask the user to sign a PDF. Signed document arrives at your callback.",
         method: "POST",
         host: "mercury",
         pathTemplate: "/auth/realms/{tenant_name}/mpower/v1/users/{chat_user_id}/signature",
-        note: "Body payload format varies by tenant. Check the official spec for the exact PDF + metadata schema.",
+        bodyType: "multipart",
+        note: "multipart/form-data with two parts: signatureFile (the PDF) + signatureData (JSON metadata: page/coords/callback).",
         params: [
           { name: "tenant_name", in: "path", required: true, defaultFrom: "tenant" },
           { name: "chat_user_id", in: "path", required: true, example: "alice@example.com" },
         ],
-        bodyTemplate: `{
-  "serviceUuid": "{{client_id}}"
+        multipartParts: [
+          { kind: "file", name: "signatureFile", description: "PDF document to sign.", accept: "application/pdf" },
+          {
+            kind: "text",
+            name: "signatureData",
+            description: "JSON metadata: page number, signature rectangle coords, prompt text, callback URL.",
+            defaultJson: `{
+  "serviceUuid": "{{client_id}}",
+  "pageNumber": 1,
+  "bottomLeftXCoordinate": 100,
+  "bottomLeftYCoordinate": 100,
+  "topRightXCoordinate": 300,
+  "topRightYCoordinate": 200,
+  "messageText": "Please sign this document",
+  "callbackUrl": "https://yourapp.example/signature-callback"
 }`,
+          },
+        ],
       },
     ],
   },
@@ -383,7 +418,7 @@ export const CATEGORIES: CategoryInfo[] = [
     label: "Pay",
     tagline: "One-click checkout with full lifecycle: create, pre-auth, post-auth, status, void, refund.",
     description:
-      "KOBIL Pay runs on a dedicated Pay host. The merchant (your service) is identified by merchantId + merchantServiceUUID (both = your client_id). Every call carries an idempotencyId so retries are safe.",
+      "KOBIL Pay runs on a dedicated Pay host. The merchant (your service) is identified by merchantId + merchantServiceUUID (both = your client_id). The payer is identified by userId — note this is a KOBIL user UUID, not an email. Every call carries an idempotencyId so retries are safe.",
     steps: [
       "Get a service-account access token.",
       "Initialize a regular transaction (immediate capture) or pre-auth (capture later).",
@@ -473,17 +508,34 @@ export const CATEGORIES: CategoryInfo[] = [
       {
         id: "chat-pdf-sign",
         name: "Initiate PDF signature (via Chat)",
-        summary: "Ask the user to sign a PDF; signed document is returned via your callback.",
+        summary: "Ask the user to sign a PDF; signed document arrives at your callback.",
         method: "POST",
         host: "mercury",
         pathTemplate: "/auth/realms/{tenant_name}/mpower/v1/users/{chat_user_id}/signature",
+        bodyType: "multipart",
+        note: "multipart/form-data: signatureFile (PDF) + signatureData (JSON metadata).",
         params: [
           { name: "tenant_name", in: "path", required: true, defaultFrom: "tenant" },
           { name: "chat_user_id", in: "path", required: true, example: "alice@example.com" },
         ],
-        bodyTemplate: `{
-  "serviceUuid": "{{client_id}}"
+        multipartParts: [
+          { kind: "file", name: "signatureFile", description: "PDF document to sign.", accept: "application/pdf" },
+          {
+            kind: "text",
+            name: "signatureData",
+            description: "Signature metadata JSON.",
+            defaultJson: `{
+  "serviceUuid": "{{client_id}}",
+  "pageNumber": 1,
+  "bottomLeftXCoordinate": 100,
+  "bottomLeftYCoordinate": 100,
+  "topRightXCoordinate": 300,
+  "topRightYCoordinate": 200,
+  "messageText": "Please sign this document",
+  "callbackUrl": "https://yourapp.example/signature-callback"
 }`,
+          },
+        ],
       },
       {
         id: "tms-sign-tx",
