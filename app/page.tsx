@@ -62,28 +62,58 @@ const flow = [
 export default function Home() {
   return (
     <div>
-      <section className="border-b border-zinc-200 bg-gradient-to-b from-white to-zinc-50">
-        <div className="mx-auto max-w-6xl px-6 py-20">
-          <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-[var(--accent)]">
+      <section className="relative overflow-hidden bg-[var(--kobil-blue)] text-white">
+        {/* Subtle wave / line motif — guidelines: background texture only, never foreground */}
+        <svg
+          aria-hidden
+          className="absolute inset-x-0 bottom-0 h-64 w-full text-white/10"
+          viewBox="0 0 1440 320"
+          preserveAspectRatio="none"
+        >
+          <path
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            d="M0,160 C240,260 480,40 720,140 C960,240 1200,80 1440,180"
+          />
+          <path
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            d="M0,200 C240,300 480,80 720,180 C960,280 1200,120 1440,220"
+          />
+          <path
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            d="M0,240 C240,340 480,120 720,220 C960,320 1200,160 1440,260"
+          />
+        </svg>
+
+        <div className="relative mx-auto max-w-6xl px-6 py-20">
+          <p className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-white/80">
             Partner Developer Guide
           </p>
-          <h1 className="max-w-3xl text-4xl font-semibold tracking-tight text-zinc-900 sm:text-5xl">
+          <h1 className="max-w-3xl text-4xl font-bold tracking-tight sm:text-5xl">
             Ship on the KOBIL SuperApp platform in three steps.
           </h1>
-          <p className="mt-5 max-w-2xl text-lg leading-8 text-zinc-600">
+          <p className="mt-5 max-w-2xl text-lg leading-8 text-white/85">
             Register a service, get a token via your service account, and call Identity, Chat, Pay,
             Signature, and TMS APIs &mdash; all from one page.
+          </p>
+          <p className="mt-6 text-sm font-medium italic text-white/90">
+            Shift. Thrive. Win.
           </p>
           <div className="mt-8 flex flex-wrap gap-3">
             <Link
               href="/agent"
-              className="rounded-full bg-[var(--accent)] px-5 py-2.5 text-sm font-medium text-white hover:bg-[var(--accent-hover)]"
+              className="rounded-full bg-white px-5 py-2.5 text-sm font-semibold text-[var(--kobil-blue)] shadow-sm hover:bg-white/90"
             >
               Start with the agent →
             </Link>
             <Link
               href="/create-service"
-              className="rounded-full border border-zinc-300 px-5 py-2.5 text-sm font-medium text-zinc-800 hover:border-zinc-900"
+              className="rounded-full border border-white/40 px-5 py-2.5 text-sm font-medium text-white hover:border-white"
             >
               Or jump to step-by-step pages
             </Link>

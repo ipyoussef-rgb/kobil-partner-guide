@@ -1,15 +1,21 @@
 @import "tailwindcss";
 
 :root {
+  /* KOBIL brand tokens — sourced from the 2026 brand guidelines */
+  --kobil-blue: #2E4FFF;        /* primary brand color */
+  --kobil-blue-hover: #2641d9;
+  --kobil-blue-tint: #E8ECFF;   /* light ghost-blue surface */
+  --kobil-navy: #0D1B3E;        /* headlines, body text */
+
   --background: #ffffff;
-  --foreground: #0a0a0a;
-  --muted: #6b7280;
-  --border: #e5e7eb;
-  --accent: #d52b1e;
-  --accent-hover: #b8231a;
-  --code-bg: #0f172a;
-  --code-fg: #e2e8f0;
-  --panel: #f9fafb;
+  --foreground: var(--kobil-navy);
+  --muted: #5b6a8a;
+  --border: #e5e9f5;
+  --accent: var(--kobil-blue);
+  --accent-hover: var(--kobil-blue-hover);
+  --code-bg: #0D1B3E;
+  --code-fg: #E8ECFF;
+  --panel: #f6f8ff;
 }
 
 @theme inline {
@@ -20,6 +26,9 @@
   --color-accent: var(--accent);
   --color-accent-hover: var(--accent-hover);
   --color-panel: var(--panel);
+  --color-kobil-blue: var(--kobil-blue);
+  --color-kobil-navy: var(--kobil-navy);
+  --color-kobil-blue-tint: var(--kobil-blue-tint);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
