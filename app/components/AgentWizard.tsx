@@ -1,7 +1,14 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { CATEGORIES, findCategory, type Category, type Endpoint, type Param } from "../../lib/endpoints";
+import {
+  CATEGORIES,
+  deriveProductBase,
+  findCategory,
+  type Category,
+  type Endpoint,
+  type Param,
+} from "../../lib/endpoints";
 
 const STATE_KEY = "kobil-agent-v1";
 
@@ -648,6 +655,26 @@ function TokenForm({
 
 // ---------- Endpoint form ----------
 
+function uuidv4(): string {
+  const a = new Uint8Array(16);
+  crypto.getRandomValues(a);
+  a[6] = (a[6] & 0x0f) | 0x40;
+  a[8] = (a[8] & 0x3f) | 0x80;
+  const h = Array.from(a, (b) => b.toString(16).padStart(2, "0"));
+  return `${h[0]}${h[1]}${h[2]}${h[3]}-${h[4]}${h[5]}-${h[6]}${h[7]}-${h[8]}${h[9]}-${h[10]}${h[11]}${h[12]}${h[13]}${h[14]}${h[15]}`;
+}
+
+function substitute(template: string, vars: Record<string, string>): string {
+  return template
+    .replace(/\{\{\$randomUUID\}\}/g, uuidv4())
+    .replace(/\{\{([\w.-]+)\}\}/g, (_, k) => (k in vars ? vars[k] : `{{${k}}}`));
+}
+
+function basicAuth(clientId: string, clientSecret: string): string {
+  if (typeof btoa === "function") return "Basic " + btoa(`${clientId}:${clientSecret}`);
+  return "";
+}
+
 function EndpointForm({
   endpoint,
   service,
@@ -659,83 +686,116 @@ function EndpointForm({
 }) {
   const [base, setBase] = useState("");
   const [paramValues, setParamValues] = useState<Record<string, string>>({});
+  const [bodyText, setBodyText] = useState<string>("");
+  const [formFields, setFormFields] = useState<{ key: string; value: string }[]>([]);
   const [loading, setLoading] = useState(false);
   const [resp, setResp] = useState<{ status: number; statusText?: string; body: unknown; error?: string } | null>(null);
 
-  // Re-initialize when endpoint changes
+  // Variables available for {{template}} substitution.
+  const subsVars = useMemo<Record<string, string>>(
+    () => ({
+      client_id: service.clientId,
+      client_secret: service.clientSecret,
+      tenant_name: service.tenant,
+      tenant_id: service.tenant,
+      base_url: new URL(service.baseUrl).host.replace(/^smartdashboard\./, ""),
+    }),
+    [service],
+  );
+
+  // Re-initialize whenever the active endpoint changes.
   useEffect(() => {
-    // Derive default base.
-    let defaultBase = "";
-    if (endpoint.base === "idp") {
-      if (service.issuer) {
-        defaultBase = service.issuer.replace(/\/realms\/[^/]+\/?$/, "");
-      } else if (service.tokenEndpoint) {
-        const m = service.tokenEndpoint.match(/^(.*?)\/realms\//);
-        if (m) defaultBase = m[1];
-      } else {
-        try {
-          const u = new URL(service.baseUrl);
-          const idpHost = u.host.replace(/^smartdashboard\./, "idp.");
-          defaultBase = `${u.protocol}//${idpHost}/auth`;
-        } catch {
-          /* ignore */
-        }
-      }
-    }
+    let defaultBase = deriveProductBase(endpoint.host, service.baseUrl);
+    defaultBase = defaultBase.replace(/\/auth\/?$/i, "");
     setBase(defaultBase);
 
-    // Pre-fill params.
     const next: Record<string, string> = {};
     for (const p of endpoint.params) {
       if (p.defaultFrom === "tenant") next[p.name] = service.tenant;
       else if (p.defaultFrom === "clientId") next[p.name] = service.clientId;
       else if (p.defaultFrom === "callbackUrl") next[p.name] = service.callbackUrl || "";
+      else if (p.example && p.example.includes("{{")) next[p.name] = substitute(p.example, subsVars);
       else if (p.example) next[p.name] = p.example;
       else next[p.name] = "";
     }
     setParamValues(next);
-    setResp(null);
-  }, [endpoint, service]);
 
-  function buildUrl(): { url: string; body: string | null } {
+    if (endpoint.bodyTemplate) {
+      setBodyText(substitute(endpoint.bodyTemplate, subsVars));
+    } else {
+      setBodyText("");
+    }
+
+    if (endpoint.formData && endpoint.formData.length > 0) {
+      setFormFields(
+        endpoint.formData.map((f) => ({ key: f.key, value: substitute(f.value, subsVars) })),
+      );
+    } else {
+      setFormFields([]);
+    }
+
+    setResp(null);
+  }, [endpoint, service, subsVars]);
+
+  function buildRequest(): { url: string; body: string | null; headers: Record<string, string> } {
     let path = endpoint.pathTemplate;
     const query: string[] = [];
-    const bodyObj: Record<string, unknown> = {};
+    const headers: Record<string, string> = {};
     for (const p of endpoint.params) {
-      const raw = paramValues[p.name] ?? "";
-      const val = raw.trim();
+      const val = (paramValues[p.name] ?? "").trim();
       if (p.in === "path") {
-        path = path.replace(`{${p.name}}`, encodeURIComponent(val));
+        // Both {paramName} and {{paramName}} substitution.
+        path = path
+          .replace(`{${p.name}}`, encodeURIComponent(val))
+          .replace(`{{${p.name}}}`, encodeURIComponent(val));
       } else if (p.in === "query" && val) {
         query.push(`${encodeURIComponent(p.name)}=${encodeURIComponent(val)}`);
-      } else if (p.in === "body" && (val || p.required)) {
-        const k = p.bodyKey ?? p.name;
-        if (p.type === "number" && val) bodyObj[k] = Number(val);
-        else if (p.type === "boolean" && val) bodyObj[k] = val === "true" || val === "1";
-        else if (val) bodyObj[k] = val;
+      } else if (p.in === "header" && val) {
+        headers[p.name] = val;
       }
     }
+
     const url = `${base.replace(/\/+$/, "")}${path}${query.length ? `?${query.join("&")}` : ""}`;
-    const body = endpoint.method !== "GET" && endpoint.method !== "DELETE" && Object.keys(bodyObj).length > 0
-      ? JSON.stringify(bodyObj, null, 2)
-      : null;
-    return { url, body };
+
+    let body: string | null = null;
+    if (endpoint.formData && endpoint.formData.length > 0) {
+      const form = new URLSearchParams();
+      for (const f of formFields) {
+        if (f.key && f.value) form.set(f.key, f.value);
+      }
+      body = form.toString();
+      headers["Content-Type"] = endpoint.contentType ?? "application/x-www-form-urlencoded";
+    } else if (endpoint.method !== "GET" && endpoint.method !== "DELETE" && bodyText.trim()) {
+      // Substitute placeholders that may remain in the (possibly edited) body.
+      body = substitute(bodyText, subsVars);
+      headers["Content-Type"] = endpoint.contentType ?? "application/json";
+    }
+
+    return { url, body, headers };
   }
 
-  const preview = useMemo(buildUrl, [paramValues, base, endpoint]);
+  const preview = useMemo(buildRequest, [paramValues, base, endpoint, bodyText, formFields, subsVars]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
     setResp(null);
     try {
+      const headers: Record<string, string> = { ...preview.headers };
+      // Token endpoints don't take a Bearer; everything else does.
+      const isTokenEndpoint = endpoint.host === "idp" && endpoint.pathTemplate.endsWith("/token");
+      if (!isTokenEndpoint && accessToken) {
+        headers.Authorization = `Bearer ${accessToken}`;
+      }
+      if (!headers.Accept) headers.Accept = "application/json";
+
       const r = await fetch("/api/proxy", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           url: preview.url,
           method: endpoint.method,
-          headers: { Authorization: `Bearer ${accessToken}` },
+          headers,
           body: preview.body,
         }),
       });
@@ -747,6 +807,13 @@ function EndpointForm({
       setLoading(false);
     }
   }
+
+  const baseLabel =
+    endpoint.host === "idp"
+      ? "IDP base URL"
+      : endpoint.host === "pay"
+        ? "Pay base URL"
+        : "TMS base URL";
 
   return (
     <div className="mt-3 rounded-lg border border-zinc-200 bg-white">
@@ -762,13 +829,13 @@ function EndpointForm({
         >
           {endpoint.method}
         </span>
-        <span className="font-mono text-zinc-800">{endpoint.pathTemplate}</span>
+        <span className="break-all font-mono text-zinc-800">{endpoint.pathTemplate}</span>
         {endpoint.docsUrl ? (
           <a
             href={endpoint.docsUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="ml-auto text-zinc-500 underline hover:text-zinc-900"
+            className="ml-auto whitespace-nowrap text-zinc-500 underline hover:text-zinc-900"
           >
             spec ↗
           </a>
@@ -779,16 +846,18 @@ function EndpointForm({
         <p className="text-xs text-zinc-600">{endpoint.summary}</p>
 
         <Field
-          label={endpoint.base === "idp" ? "IDP base URL" : "Product API base URL"}
+          label={baseLabel}
           required
           value={base}
           onChange={setBase}
-          hint={
-            endpoint.base === "idp"
-              ? "Derived from the well-known config / SmartDashboard URL."
-              : "Provide the product's API host, e.g. https://chat.cloud.kobil.com"
-          }
+          hint={`Derived: smartdashboard.{env} → ${endpoint.host}.{env}.`}
         />
+
+        {endpoint.note ? (
+          <p className="rounded bg-amber-50 px-2 py-1.5 text-[11px] text-amber-900">
+            {endpoint.note}
+          </p>
+        ) : null}
 
         {endpoint.params.length > 0 ? (
           <div className="grid gap-3 sm:grid-cols-2">
@@ -803,6 +872,58 @@ function EndpointForm({
           </div>
         ) : null}
 
+        {endpoint.formData && endpoint.formData.length > 0 ? (
+          <div>
+            <p className="mb-1 text-xs font-medium text-zinc-800">
+              Form body{" "}
+              <span className="rounded bg-zinc-100 px-1.5 py-0.5 text-[10px] uppercase text-zinc-600">
+                {endpoint.contentType ?? "application/x-www-form-urlencoded"}
+              </span>
+            </p>
+            <div className="space-y-2">
+              {formFields.map((f, i) => (
+                <div key={i} className="grid grid-cols-[140px_1fr] gap-2">
+                  <input
+                    value={f.key}
+                    onChange={(e) =>
+                      setFormFields((cur) =>
+                        cur.map((x, j) => (j === i ? { ...x, key: e.target.value } : x)),
+                      )
+                    }
+                    className="rounded-md border border-zinc-300 px-2 py-1 font-mono text-xs"
+                  />
+                  <input
+                    value={f.value}
+                    onChange={(e) =>
+                      setFormFields((cur) =>
+                        cur.map((x, j) => (j === i ? { ...x, value: e.target.value } : x)),
+                      )
+                    }
+                    className="rounded-md border border-zinc-300 px-2 py-1 font-mono text-xs"
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
+
+        {endpoint.bodyTemplate ? (
+          <div>
+            <p className="mb-1 text-xs font-medium text-zinc-800">
+              JSON body
+              <span className="ml-2 text-[10px] text-zinc-500">
+                {"{"}{"{"}variables{"}"}{"}"} are substituted on send. {"{"}{"{"}$randomUUID{"}"}{"}"} regenerates each call.
+              </span>
+            </p>
+            <textarea
+              value={bodyText}
+              onChange={(e) => setBodyText(e.target.value)}
+              rows={Math.min(20, Math.max(6, bodyText.split("\n").length))}
+              className="w-full rounded-md border border-zinc-300 bg-zinc-50 px-2 py-1.5 font-mono text-[11px] leading-snug focus:border-zinc-900 focus:outline-none"
+            />
+          </div>
+        ) : null}
+
         <div className="rounded bg-zinc-50 p-2 text-[11px] font-mono break-all text-zinc-700">
           <span className="text-zinc-500">{endpoint.method} </span>
           {preview.url}
@@ -810,7 +931,7 @@ function EndpointForm({
 
         <button
           type="submit"
-          disabled={loading || !accessToken}
+          disabled={loading}
           className="rounded-full bg-[var(--accent)] px-4 py-1.5 text-sm font-medium text-white hover:bg-[var(--accent-hover)] disabled:opacity-60"
         >
           {loading ? "Sending…" : "Send request"}
