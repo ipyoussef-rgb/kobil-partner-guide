@@ -182,17 +182,7 @@ const TMS_START_BODY = `{
     "text": "test TMS",
     "external": false,
     "data": {
-      "origin": "KSA",
-      "introduction1_en": "Please check your transaction details",
-      "authorizationHeader_en": "TRANSACTION VERIFICATION",
-      "authorizationData_en": [
-        { "key": "Username", "valueText": "Alice Example" }
-      ],
-      "dataSummary_en": [
-        { "key": "Browser", "valueText": "Secure Webview" },
-        { "key": "IP", "valueText": "**.***.**.**" },
-        { "key": "Date", "valueText": "2026-05-20T08:00:00.000Z" }
-      ]
+      "key": "value"
     }
   },
   "retrievalTimeout": 50,
@@ -357,13 +347,14 @@ export const CATEGORIES: CategoryInfo[] = [
             name: "signatureData",
             description: "JSON metadata: page number, signature rectangle coords, prompt text, callback URL.",
             defaultJson: `{
-  "serviceUuid": "{{client_id}}",
+  "version": 3,
   "pageNumber": 1,
-  "bottomLeftXCoordinate": 100,
-  "bottomLeftYCoordinate": 100,
-  "topRightXCoordinate": 300,
-  "topRightYCoordinate": 200,
-  "messageText": "Please sign this document",
+  "bottomLeftXCoordinate": 59,
+  "bottomLeftYCoordinate": 89,
+  "topRightXCoordinate": 85,
+  "topRightYCoordinate": 96,
+  "serviceUuid": "{{client_id}}",
+  "messageText": "Please sign here",
   "callbackUrl": "https://yourapp.example/signature-callback"
 }`,
           },
