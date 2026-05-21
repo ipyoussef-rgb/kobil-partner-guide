@@ -302,7 +302,7 @@ export const CATEGORIES: CategoryInfo[] = [
         host: "mercury",
         pathTemplate: "/auth/realms/{tenant_name}/mpower/v1/users/{userId}/media",
         bodyType: "multipart",
-        note: "multipart/form-data with two parts: attachment (the file) + message (JSON metadata for the chat message wrapping it).",
+        note: "multipart/form-data with two parts: attachment (the file) + message (JSON metadata). messageType must be 'attachmentMessage' — Mercury treats it differently from a plain text message.",
         params: [
           { name: "tenant_name", in: "path", required: true, defaultFrom: "tenant" },
           { name: "userId", in: "path", required: true, description: "Recipient's email address.", example: "alice@example.com" },
@@ -315,7 +315,7 @@ export const CATEGORIES: CategoryInfo[] = [
             description: "JSON metadata for the chat message that wraps the attachment.",
             defaultJson: `{
   "serviceUuid": "{{client_id}}",
-  "messageType": "processChatMessage",
+  "messageType": "attachmentMessage",
   "version": 3,
   "messageContent": {
     "messageText": "Here is the attachment you requested."
