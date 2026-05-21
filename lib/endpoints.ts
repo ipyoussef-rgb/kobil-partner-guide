@@ -16,7 +16,7 @@
 //   - https://documentation.cloud.kobil.com/api/
 //   - https://developer.kobil.com/api/idp
 
-export type Category = "identity" | "chat" | "pay" | "sign" | "tms";
+export type Category = "identity" | "chat" | "pay" | "tms";
 
 export type ParamLocation = "path" | "query" | "header" | "body";
 
@@ -200,89 +200,44 @@ const TMS_START_BODY = `{
   "requireExplicitAuthentication": false,
   "requireFreshnessOfAuthentication": -1,
   "auditMessage": "test TMS auditMessage",
-  "userId": "{{tms_user_id}}"
+  "userId": "00000000-0000-0000-0000-000000000000"
 }`;
 
 export const CATEGORIES: CategoryInfo[] = [
   {
     key: "identity",
     label: "Identity",
-    tagline: "Authenticate users and obtain access tokens via OpenID Connect.",
+    tagline: "Authenticate via OIDC and look up SuperApp users.",
     description:
-      "KOBIL Identity speaks standard OIDC. Users get tokens via the authorization-code flow; service-to-service callers use client_credentials, either by passing client_id/client_secret in the body or via a Basic Authorization header.",
+      "KOBIL Identity has two things you'll do here: get an access token (handled in Step A above) and look up users by email via the IDP getUserInfo endpoint.",
     steps: [
-      "Decide which grant you need: user login (authorization_code) or service-to-service (client_credentials).",
-      "For users: redirect to the authorization endpoint, get a code back, then exchange it at the token endpoint.",
-      "For services: POST grant_type=client_credentials to the token endpoint — either with client_id/client_secret in the body, or with a Basic Authorization header.",
+      "Step A — token: POST grant_type=client_credentials to the token endpoint with your service's client_id and client_secret.",
       "Use the returned access_token as Authorization: Bearer … on every subsequent KOBIL API call.",
+      "Step B — getUserInfo: GET /auth/realms/{tenant}/v3_user/{userId} where userId is the user's email address.",
     ],
     endpoints: [
       {
-        id: "userinfo",
-        name: "Userinfo (test the token)",
+        id: "get-user-info",
+        name: "Get user info",
         summary:
-          "OIDC userinfo endpoint. Use this to verify a token is valid; returns the token holder's claims (sub, preferred_username, email).",
+          "Look up a SuperApp user record by email. Returns id, email, firstName, lastName, attributes, enabled, etc.",
         method: "GET",
         host: "idp",
-        pathTemplate: "/auth/realms/{tenant_name}/protocol/openid-connect/userinfo",
-        params: [
-          { name: "tenant_name", in: "path", required: true, defaultFrom: "tenant" },
-        ],
-        note: "Requires scope=openid on the token (already the agent's default).",
-      },
-      {
-        id: "user-token",
-        name: "User Token (authorization_code)",
-        summary: "Exchange an authorization code obtained from the login flow for an access token.",
-        method: "POST",
-        host: "idp",
-        pathTemplate: "/auth/realms/{tenant_name}/protocol/openid-connect/token",
-        contentType: "application/x-www-form-urlencoded",
-        params: [
-          { name: "tenant_name", in: "path", required: true, defaultFrom: "tenant" },
-        ],
-        formData: [
-          { key: "client_id", value: "{{client_id}}" },
-          { key: "client_secret", value: "{{client_secret}}" },
-          { key: "code", value: "<code>", description: "Authorization code returned by the login redirect." },
-          { key: "redirect_uri", value: "https://oidcdebugger.com/debug", description: "Must match the redirect_uri used to obtain the code." },
-          { key: "grant_type", value: "authorization_code" },
-        ],
-      },
-      {
-        id: "service-token-header",
-        name: "Service Token (Basic auth header)",
-        summary: "client_credentials grant; client_id:client_secret sent in the Authorization: Basic header.",
-        method: "POST",
-        host: "idp",
-        pathTemplate: "/auth/realms/{tenant_name}/protocol/openid-connect/token",
-        contentType: "application/x-www-form-urlencoded",
+        pathTemplate: "/auth/realms/{tenant_name}/v3_user/{userId}",
+        docsUrl: "https://developer.kobil.com/api/idp#tag/Users/operation/getUserInfo",
+        note: "userId here is the user's email (the Keycloak username). Requires admin role on the service account — a vanilla service-account token will return 401.",
         params: [
           { name: "tenant_name", in: "path", required: true, defaultFrom: "tenant" },
           {
-            name: "Authorization",
-            in: "header",
+            name: "userId",
+            in: "path",
             required: true,
-            description: 'Basic base64(client_id:client_secret). Auto-built when "use Basic auth" is on.',
+            description: "User's email address (Keycloak username).",
+            example: "alice@example.com",
           },
-        ],
-        formData: [{ key: "grant_type", value: "client_credentials" }],
-      },
-      {
-        id: "service-token-body",
-        name: "Service Token (credentials in body)",
-        summary: "client_credentials grant with client_id and client_secret in the form body.",
-        method: "POST",
-        host: "idp",
-        pathTemplate: "/auth/realms/{tenant_name}/protocol/openid-connect/token",
-        contentType: "application/x-www-form-urlencoded",
-        params: [
-          { name: "tenant_name", in: "path", required: true, defaultFrom: "tenant" },
-        ],
-        formData: [
-          { key: "grant_type", value: "client_credentials" },
-          { key: "client_id", value: "{{client_id}}" },
-          { key: "client_secret", value: "{{client_secret}}" },
+          { name: "firstName", in: "query", required: false, description: "Filter by first name." },
+          { name: "limit", in: "query", required: false, description: "Max users to return." },
+          { name: "pageNumber", in: "query", required: false, description: "Page number." },
         ],
       },
     ],
@@ -292,10 +247,10 @@ export const CATEGORIES: CategoryInfo[] = [
     label: "Chat",
     tagline: "Send messages, choices, attachments, and signature requests to SuperApp users.",
     description:
-      "KOBIL Chat delivers messages into a user's SuperApp inbox via the Mercury host. The recipient is identified by their email (chat_user_id). All write endpoints require serviceUuid (= your service's client_id).",
+      "KOBIL Chat delivers messages into a user's SuperApp inbox via the Mercury host. The recipient is identified by userId — for Chat, userId is the user's email address. All write endpoints require serviceUuid (= your service's client_id).",
     steps: [
       "Complete the Identity integration and obtain an access token via client_credentials.",
-      "POST a message to /mpower/v1/users/{user_email}/message with the desired messageType.",
+      "POST a message to /mpower/v1/users/{userId}/message — userId is the user's email.",
       "Register a callback endpoint with the SuperApp Admin to receive user replies.",
       "For attachments, upload to /media; download with the returned media_id.",
     ],
@@ -306,10 +261,10 @@ export const CATEGORIES: CategoryInfo[] = [
         summary: "Push a one-way text message to the user's chat inbox.",
         method: "POST",
         host: "mercury",
-        pathTemplate: "/auth/realms/{tenant_name}/mpower/v1/users/{chat_user_id}/message",
+        pathTemplate: "/auth/realms/{tenant_name}/mpower/v1/users/{userId}/message",
         params: [
           { name: "tenant_name", in: "path", required: true, defaultFrom: "tenant" },
-          { name: "chat_user_id", in: "path", required: true, description: "Recipient's email address.", example: "alice@example.com" },
+          { name: "userId", in: "path", required: true, description: "Recipient's email address.", example: "alice@example.com" },
         ],
         bodyTemplate: CHAT_TEXT_BODY,
       },
@@ -319,10 +274,10 @@ export const CATEGORIES: CategoryInfo[] = [
         summary: "Ask the user to pick one of several options.",
         method: "POST",
         host: "mercury",
-        pathTemplate: "/auth/realms/{tenant_name}/mpower/v1/users/{chat_user_id}/message",
+        pathTemplate: "/auth/realms/{tenant_name}/mpower/v1/users/{userId}/message",
         params: [
           { name: "tenant_name", in: "path", required: true, defaultFrom: "tenant" },
-          { name: "chat_user_id", in: "path", required: true, example: "alice@example.com" },
+          { name: "userId", in: "path", required: true, description: "Recipient's email address.", example: "alice@example.com" },
         ],
         bodyTemplate: CHAT_CHOICE_BODY,
       },
@@ -332,10 +287,10 @@ export const CATEGORIES: CategoryInfo[] = [
         summary: "Push a link to another MiniApp (SmartScreen service) into the chat.",
         method: "POST",
         host: "mercury",
-        pathTemplate: "/auth/realms/{tenant_name}/mpower/v1/users/{chat_user_id}/message",
+        pathTemplate: "/auth/realms/{tenant_name}/mpower/v1/users/{userId}/message",
         params: [
           { name: "tenant_name", in: "path", required: true, defaultFrom: "tenant" },
-          { name: "chat_user_id", in: "path", required: true, example: "alice@example.com" },
+          { name: "userId", in: "path", required: true, description: "Recipient's email address.", example: "alice@example.com" },
         ],
         bodyTemplate: CHAT_SMARTSCREEN_BODY,
       },
@@ -345,12 +300,12 @@ export const CATEGORIES: CategoryInfo[] = [
         summary: "Send a media attachment to the user's chat inbox.",
         method: "POST",
         host: "mercury",
-        pathTemplate: "/auth/realms/{tenant_name}/mpower/v1/users/{chat_user_id}/media",
+        pathTemplate: "/auth/realms/{tenant_name}/mpower/v1/users/{userId}/media",
         bodyType: "multipart",
         note: "multipart/form-data with two parts: attachment (the file) + message (JSON metadata for the chat message wrapping it).",
         params: [
           { name: "tenant_name", in: "path", required: true, defaultFrom: "tenant" },
-          { name: "chat_user_id", in: "path", required: true, example: "alice@example.com" },
+          { name: "userId", in: "path", required: true, description: "Recipient's email address.", example: "alice@example.com" },
         ],
         multipartParts: [
           { kind: "file", name: "attachment", description: "Media file to upload." },
@@ -388,12 +343,12 @@ export const CATEGORIES: CategoryInfo[] = [
         summary: "Ask the user to sign a PDF. Signed document arrives at your callback.",
         method: "POST",
         host: "mercury",
-        pathTemplate: "/auth/realms/{tenant_name}/mpower/v1/users/{chat_user_id}/signature",
+        pathTemplate: "/auth/realms/{tenant_name}/mpower/v1/users/{userId}/signature",
         bodyType: "multipart",
         note: "multipart/form-data with two parts: signatureFile (the PDF) + signatureData (JSON metadata: page/coords/callback).",
         params: [
           { name: "tenant_name", in: "path", required: true, defaultFrom: "tenant" },
-          { name: "chat_user_id", in: "path", required: true, example: "alice@example.com" },
+          { name: "userId", in: "path", required: true, description: "Recipient's email address.", example: "alice@example.com" },
         ],
         multipartParts: [
           { kind: "file", name: "signatureFile", description: "PDF document to sign.", accept: "application/pdf" },
@@ -496,73 +451,14 @@ export const CATEGORIES: CategoryInfo[] = [
     ],
   },
   {
-    key: "sign",
-    label: "Sign",
-    tagline: "PDF and transaction signing — delivered through Chat and TMS.",
-    description:
-      "Sign is a capability layered on Chat (PDF signature requests) and TMS (transaction signing). Both require a valid access token from Identity first.",
-    steps: [
-      "Get an access token from Identity.",
-      "For document signing → call Chat's POST /mpower/v1/users/{user_email}/signature.",
-      "For transaction signing → call TMS's POST /v1/tenants/{tenant_name}/tms.",
-      "Signed result lands at your registered callback (Chat) or via the TMS result endpoint.",
-    ],
-    endpoints: [
-      {
-        id: "chat-pdf-sign",
-        name: "Initiate PDF signature (via Chat)",
-        summary: "Ask the user to sign a PDF; signed document arrives at your callback.",
-        method: "POST",
-        host: "mercury",
-        pathTemplate: "/auth/realms/{tenant_name}/mpower/v1/users/{chat_user_id}/signature",
-        bodyType: "multipart",
-        note: "multipart/form-data: signatureFile (PDF) + signatureData (JSON metadata).",
-        params: [
-          { name: "tenant_name", in: "path", required: true, defaultFrom: "tenant" },
-          { name: "chat_user_id", in: "path", required: true, example: "alice@example.com" },
-        ],
-        multipartParts: [
-          { kind: "file", name: "signatureFile", description: "PDF document to sign.", accept: "application/pdf" },
-          {
-            kind: "text",
-            name: "signatureData",
-            description: "Signature metadata JSON.",
-            defaultJson: `{
-  "serviceUuid": "{{client_id}}",
-  "pageNumber": 1,
-  "bottomLeftXCoordinate": 100,
-  "bottomLeftYCoordinate": 100,
-  "topRightXCoordinate": 300,
-  "topRightYCoordinate": 200,
-  "messageText": "Please sign this document",
-  "callbackUrl": "https://yourapp.example/signature-callback"
-}`,
-          },
-        ],
-      },
-      {
-        id: "tms-sign-tx",
-        name: "Sign a transaction (via TMS)",
-        summary: "Start a TMS transaction the user must confirm and sign.",
-        method: "POST",
-        host: "asts",
-        pathTemplate: "/v1/tenants/{tenant_name}/tms",
-        params: [
-          { name: "tenant_name", in: "path", required: true, defaultFrom: "tenant" },
-        ],
-        bodyTemplate: TMS_START_BODY,
-      },
-    ],
-  },
-  {
     key: "tms",
     label: "TMS",
     tagline: "Transaction confirmation: start, check status, retrieve signed result.",
     description:
-      "KOBIL TMS runs on the ASTS host — `asts.{env}`, derived from the IDP host by replacing 'idp' with 'asts' (confirmed in the documentation.cloud.kobil.com source). Ask a user to confirm or reject a specific action; the user reviews and signs on their device.",
+      "KOBIL TMS runs on the ASTS host — `asts.{env}`, derived from the IDP host by replacing 'idp' with 'asts'. Ask a user to confirm or reject a specific action; the user reviews and signs on their device. The payload's userId is a KOBIL user UUID (not an email — different from Chat).",
     steps: [
       "Get an access token from Identity.",
-      "POST a TMS transaction with tmsData, timeouts, and userId.",
+      "POST a TMS transaction with tmsData, timeouts, and userId (UUID).",
       "Poll status by tms_id until the user acts.",
       "GET the result to read the signed payload + signer info.",
     ],
